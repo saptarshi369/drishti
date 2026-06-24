@@ -1,0 +1,223 @@
+package store
+
+import (
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/saptarshi369/drishti/internal/model"
+)
+
+func todayYYYYMMDD() int {
+	n := time.Now()
+	return n.Year()*10000 + int(n.Month())*100 + n.Day()
+}
+
+func TestApplyIngestInsertsAndIsIdempotent(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "drishti.db")
+	s, _ := Open(p)
+	defer s.Close()
+
+	sfID, err := s.UpsertSourceFile(model.SourceFile{
+		AgentCode: "claude", Kind: "transcript", AbsPath: "/x/a.jsonl", State: "active",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	batch := IngestBatch{
+		SourceFileID: sfID,
+		Events: []model.Event{{
+			AgentCode: "claude", TypeCode: "prompt", SourceCode: "transcript",
+			SessionID: "s1", TsMs: 1, DedupeKey: "claude|s1|h1",
+		}},
+		Deltas: []model.SessionDelta{{
+			SessionID: "s1", Model: "claude-opus-4-8", Day: 20260621,
+			InputTokens: 100, OutputTokens: 20, PromptCount: 1, StartedMs: 1,
+		}},
+		NewOffset: 50, NewLine: 1, ReadMs: 5,
+	}
+	n1, err := s.ApplyIngest(batch)
+	if err != nil || n1 != 1 {
+		t.Fatalf("first apply inserted=%d err=%v, want 1", n1, err)
+	}
+	n2, err := s.ApplyIngest(batch)
+	if err != nil || n2 != 0 {
+		t.Fatalf("replay inserted=%d err=%v, want 0", n2, err)
+	}
+
+	files, _ := s.ListSourceFiles()
+	if files[0].LastOffset != 50 {
+		t.Errorf("offset = %d, want 50", files[0].LastOffset)
+	}
+}
+
+func TestOverviewKPIsReadsRollup(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "drishti.db")
+	s, _ := Open(p)
+	defer s.Close()
+
+	day := todayYYYYMMDD()
+	sfID, _ := s.UpsertSourceFile(model.SourceFile{AgentCode: "claude", Kind: "transcript", AbsPath: "/x/b.jsonl", State: "active"})
+	_, err := s.ApplyIngest(IngestBatch{
+		SourceFileID: sfID,
+		Deltas: []model.SessionDelta{{
+			SessionID: "s9", Model: "claude-opus-4-8", Day: day,
+			InputTokens: 1000, OutputTokens: 200, PromptCount: 2, StartedMs: 1,
+		}},
+		Events:    []model.Event{{AgentCode: "claude", TypeCode: "prompt", SourceCode: "transcript", SessionID: "s9", TsMs: 1, DedupeKey: "claude|s9|p1"}},
+		NewOffset: 10, NewLine: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	k, err := s.OverviewKPIs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if k.PromptsToday != 2 {
+		t.Errorf("prompts_today = %d, want 2", k.PromptsToday)
+	}
+	if k.InputTokens != 1000 {
+		t.Errorf("input_tokens = %d, want 1000", k.InputTokens)
+	}
+}
+
+func TestRecentEventsNewestFirst(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "drishti.db")
+	s, _ := Open(p)
+	defer s.Close()
+	sf, _ := s.UpsertSourceFile(model.SourceFile{AgentCode: "claude", Kind: "transcript", AbsPath: "/r.jsonl", State: "active"})
+	s.ApplyIngest(IngestBatch{
+		SourceFileID: sf,
+		Events: []model.Event{
+			{AgentCode: "claude", TypeCode: "prompt", SourceCode: "transcript", SessionID: "s1", TsMs: 1, DedupeKey: "k1"},
+			{AgentCode: "claude", TypeCode: "prompt", SourceCode: "transcript", SessionID: "s1", TsMs: 2, DedupeKey: "k2"},
+		},
+		NewOffset: 1,
+	})
+	got, err := s.RecentEvents(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("recent = %d, want 2", len(got))
+	}
+	if got[0].Type != "prompt" || got[0].TsMs != 2 {
+		t.Errorf("newest-first broken: %+v", got[0])
+	}
+}
+
+// TestApplyIngestFoldsSkillStats verifies that ApplyIngest:
+//  1. persists the tool_name column on a tool_use event, and
+//  2. folds skill events into skill_stats (trigger_count_total increments,
+//     last_fired_ms tracks the MAX timestamp) within the same transaction.
+//
+// Two "deploy" skill events are submitted; we expect count=2 and last=2000.
+func TestApplyIngestFoldsSkillStats(t *testing.T) {
+	st := tempStore(t)
+	batch := IngestBatch{
+		Events: []model.Event{
+			{AgentCode: "claude", TypeCode: "skill", SourceCode: "transcript", SessionID: "s1", TsMs: 1000, SkillName: "deploy", DedupeKey: "claude|s1|tu1"},
+			{AgentCode: "claude", TypeCode: "skill", SourceCode: "transcript", SessionID: "s1", TsMs: 2000, SkillName: "deploy", DedupeKey: "claude|s1|tu2"},
+			{AgentCode: "claude", TypeCode: "tool_use", SourceCode: "transcript", SessionID: "s1", TsMs: 1500, ToolName: "Bash", DedupeKey: "claude|s1|tu3"},
+		},
+		ReadMs: 9,
+	}
+	if _, err := st.ApplyIngest(batch); err != nil {
+		t.Fatal(err)
+	}
+	var cnt int
+	var last int64
+	if err := st.db.QueryRow(
+		`SELECT trigger_count_total, last_fired_ms FROM skill_stats WHERE skill_name='deploy'`).Scan(&cnt, &last); err != nil {
+		t.Fatal(err)
+	}
+	if cnt != 2 || last != 2000 {
+		t.Fatalf("skill_stats deploy: count=%d last=%d (want 2, 2000)", cnt, last)
+	}
+	var first int64
+	if err := st.db.QueryRow(
+		`SELECT first_fired_ms FROM skill_stats WHERE skill_name='deploy'`).Scan(&first); err != nil {
+		t.Fatal(err)
+	}
+	if first != 1000 {
+		t.Fatalf("skill_stats deploy: first_fired_ms=%d (want 1000)", first)
+	}
+	var tool string
+	if err := st.db.QueryRow(
+		`SELECT tool_name FROM events WHERE dedupe_key='claude|s1|tu3'`).Scan(&tool); err != nil || tool != "Bash" {
+		t.Fatalf("tool_name=%q err=%v", tool, err)
+	}
+}
+
+// TestApplyIngestUsesBatchProjectRoot verifies the usage_rollup fold attributes
+// rows to IngestBatch.ProjectRoot instead of the old hardcoded ”.
+func TestApplyIngestUsesBatchProjectRoot(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "drishti.db")
+	s, _ := Open(p)
+	defer s.Close()
+
+	_, err := s.ApplyIngest(IngestBatch{
+		ProjectRoot: "-Users-me-dev-myapp",
+		Deltas: []model.SessionDelta{{
+			SessionID: "s1", Model: "claude-opus-4-8", Day: 20260622,
+			InputTokens: 100, OutputTokens: 20, PromptCount: 1, StartedMs: 1,
+		}},
+		Events: []model.Event{{
+			AgentCode: "claude", TypeCode: "prompt", SourceCode: "transcript",
+			SessionID: "s1", TsMs: 1, DedupeKey: "k1",
+		}},
+		NewOffset: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root string
+	if err := s.DB().QueryRow(
+		`SELECT project_root FROM usage_rollup WHERE day=20260622`).Scan(&root); err != nil {
+		t.Fatal(err)
+	}
+	if root != "-Users-me-dev-myapp" {
+		t.Fatalf("project_root = %q, want -Users-me-dev-myapp", root)
+	}
+}
+
+// TestAgentID verifies the exported AgentID helper returns the correct id and
+// known flag for both a recognised code ("claude") and an unknown one ("codex").
+// This guards the API-layer 400 path that relies on AgentID to pre-validate the
+// agent before any database write.
+func TestAgentID(t *testing.T) {
+	if id, ok := AgentID("claude"); id != 1 || !ok {
+		t.Errorf("AgentID(claude) = (%d,%v), want (1,true)", id, ok)
+	}
+	if id, ok := AgentID("codex"); id != 0 || ok {
+		t.Errorf("AgentID(codex) = (%d,%v), want (0,false)", id, ok)
+	}
+}
+
+func TestBackfillRollupCostIsIdempotent(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "drishti.db")
+	s, _ := Open(p)
+	defer s.Close()
+	day := todayYYYYMMDD()
+	sf, _ := s.UpsertSourceFile(model.SourceFile{AgentCode: "claude", Kind: "transcript", AbsPath: "/c.jsonl", State: "active"})
+	s.ApplyIngest(IngestBatch{
+		SourceFileID: sf,
+		Deltas:       []model.SessionDelta{{SessionID: "s1", Model: "m", Day: day, InputTokens: 10, StartedMs: 1}},
+		NewOffset:    1,
+	})
+	// costFn returns a fixed $2 regardless of inputs; SET (not add) → idempotent.
+	cost := func(string, int64, int64, int64, int64) float64 { return 2.0 }
+	if err := s.BackfillRollupCost(cost); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.BackfillRollupCost(cost); err != nil {
+		t.Fatal(err)
+	}
+	var got float64
+	s.DB().QueryRow(`SELECT est_cost_usd FROM usage_rollup WHERE day=?`, day).Scan(&got)
+	if got != 2.0 {
+		t.Errorf("est_cost_usd = %v, want 2.0 (set, not accumulated)", got)
+	}
+}

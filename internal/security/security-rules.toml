@@ -1,0 +1,83 @@
+# Drishti — Security & Audit rules (you can edit this file).
+#
+# Each [[rule]] is one check. Remove a rule to stop scanning for it, set
+# enabled=false to mute it, or change its severity. You can also ADD rules of
+# the same types below — e.g. another require-deny-for-path for ~/.aws/credentials.
+#
+# Fields:
+#   id          stable identifier (shown in findings)
+#   type        one of: require-deny-for-path | forbid-mode | broad-allow |
+#               untrusted-source | secret-in-env | secret-in-settings
+#   enabled     true|false
+#   severity    high | medium | low
+#   title       short label shown on the finding
+#   remediation what to do about it
+#   patterns/modes/allowed/keywords/prefixes  type-specific parameters
+#
+# Privacy: secret values are detected then discarded — only key NAMES are ever
+# recorded. This file never contains real secrets.
+
+[[rule]]
+id = "missing-env-deny"
+type = "require-deny-for-path"
+enabled = true
+severity = "high"
+title = "No deny rule protects .env files"
+patterns = [".env"]
+remediation = "Add Read(.env) and Read(**/.env) to permissions.deny in your settings.json."
+
+[[rule]]
+id = "missing-ssh-deny"
+type = "require-deny-for-path"
+enabled = true
+severity = "high"
+title = "No deny rule protects SSH private keys"
+patterns = [".ssh", "id_rsa", "id_ed25519"]
+remediation = "Add Read(~/.ssh/**) to permissions.deny in your settings.json."
+
+[[rule]]
+id = "bypass-permissions-mode"
+type = "forbid-mode"
+enabled = true
+severity = "high"
+title = "Permission prompts are bypassed"
+modes = ["bypassPermissions"]
+remediation = "Set defaultMode to a prompting mode (e.g. \"default\") in settings.json."
+
+[[rule]]
+id = "overly-broad-allow"
+type = "broad-allow"
+enabled = true
+severity = "medium"
+title = "Allow rule is overly broad"
+patterns = ["Bash(*)", "Read(*)", "Edit(*)", "Write(*)", "*"]
+remediation = "Replace the wildcard allow with specific, scoped permissions."
+
+[[rule]]
+id = "secrets-in-mcp-env"
+type = "secret-in-env"
+enabled = true
+severity = "high"
+title = "MCP server env may contain a secret"
+keywords = ["token", "secret", "password", "apikey", "api_key", "auth", "credential"]
+prefixes = ["sk-", "ghp_", "github_pat_", "AKIA", "xoxb-"]
+remediation = "Move the secret to a shell-exported env var and reference it; don't inline it in .mcp.json."
+
+[[rule]]
+id = "untrusted-plugin-source"
+type = "untrusted-source"
+enabled = true
+severity = "medium"
+title = "Plugin from an untrusted source"
+allowed = ["anthropics", "claude"]
+remediation = "Verify the marketplace, then add it to this rule's allowed list if you trust it."
+
+[[rule]]
+id = "plaintext-api-key-in-settings"
+type = "secret-in-settings"
+enabled = true
+severity = "low"
+title = "Settings value looks like a plaintext key"
+keywords = ["token", "secret", "password", "apikey", "api_key", "credential"]
+prefixes = ["sk-", "ghp_", "github_pat_", "AKIA", "xoxb-"]
+remediation = "Remove the inlined secret from settings; use apiKeyHelper or an env var instead."

@@ -1,0 +1,19 @@
+version: "2"
+linters:
+  enable:
+    - revive
+    - govet
+    - errcheck
+    - staticcheck
+    - ineffassign
+  settings:
+    revive:
+      rules:
+        - name: exported
+          severity: error
+          arguments: ["checkPrivateReceivers"]
+        - name: package-comments
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters: [revive, errcheck]

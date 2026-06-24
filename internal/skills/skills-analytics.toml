@@ -1,0 +1,18 @@
+# Drishti — Skills Analytics thresholds (you can edit this file).
+#
+# These two numbers control the "over-triggering" flag on the Skills screen.
+# A skill is flagged over-triggering when BOTH are true:
+#   * it fired at least `high_trigger_min` times, AND
+#   * its value ratio is below `low_value_ratio_max`.
+#
+# value ratio = triggers / (est_context_tokens / 1000)
+#   "how many times the skill fired per 1,000 tokens of always-on context cost."
+#   Higher is better. A skill that fires a lot but still has a low ratio is
+#   expensive for what you get — that is exactly what this flag catches.
+#
+# Tuning:
+#   lower  high_trigger_min     → flags skills that fire less often
+#   raise  low_value_ratio_max  → stricter bar; flags more skills
+
+high_trigger_min = 20
+low_value_ratio_max = 5.0

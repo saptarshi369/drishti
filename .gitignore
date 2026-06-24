@@ -1,0 +1,25 @@
+/drishti
+/cover.out
+/web/node_modules
+/web/.svelte-kit
+*.corrupt.*
+
+# Local runtime data — never publish. Real data lives in ~/.drishti & ~/.claude
+# (outside this repo); these patterns are defense-in-depth in case the data dir
+# is ever pointed at the repo (e.g. DRISHTI_DATA_DIR=.) during development.
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.env
+.env
+/security-rules.toml
+
+# AI / workflow artifacts — kept local, never published
+.claude/
+.superpowers/
+CLAUDE.md
+docs/superpowers/
+Drishti-TECH-SPEC.md
+docs/*.dc.html
