@@ -156,7 +156,11 @@ type CounterSet struct {
 // populated; ToolName/SkillName/Status are set only for event types that carry
 // them (tool_use, skill, blocked/error respectively) and are omitted from JSON
 // when empty so prompt rows stay compact (Privacy D8: no raw text, names only).
+// ID is the local cache row id (a meaningless monotonic counter, not sensitive)
+// — the UI needs it as a stable, unique key for the live-stream list, since two
+// events can share the same ts_ms+type+session_id.
 type RecentEvent struct {
+	ID        int64  `json:"id"`
 	TsMs      int64  `json:"ts_ms"`
 	Type      string `json:"type"`
 	SessionID string `json:"session_id"`

@@ -118,6 +118,17 @@ func Run(ctx context.Context, version string) error {
 		lg.Warn("rebuilt local cache from source (no data lost)")
 	}
 
+	// Inject the pricing fn so the store stamps est_cost_usd as it folds each
+	// usage_rollup row AT INGEST. This keeps the hot read/broadcast path read-only:
+	// OverviewSnapshot/UsageSnapshot no longer rewrite the whole table under the
+	// write lock on every 1s tick (the Overview-slowness fix). Then backfill once
+	// to price any rows ingested before this wiring existed; a failure is logged and
+	// ignored so startup never dies over a cost recompute (§14).
+	st.SetCostFn(services.Cost)
+	if err := st.BackfillRollupCost(services.Cost); err != nil {
+		lg.Warn("startup cost backfill", "err", err)
+	}
+
 	// Startup reconcile ladder: cold/incremental scan of all transcripts.
 	roots := []string{filepath.Join(userHome(), ".claude", "projects")}
 	rec := ingest.New(st, roots, lg)

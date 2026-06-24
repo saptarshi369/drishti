@@ -3,6 +3,28 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Empty inline icon: tells the browser there is no favicon so it stops
+         requesting /favicon.ico (which the embedded static server 404s on). -->
+    <link rel="icon" href="data:," />
+    <!-- Pre-paint theme: apply the user's stored choice, or fall back to
+         time-of-day (light 07:00–18:59, dark otherwise), BEFORE first paint so
+         there is no dark→light flash. Mirrors $lib/theme; keep the 7/19 boundary
+         and accent logic in sync. Wrapped in try/catch — a storage error must
+         never block the page. -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('theme');
+          if (t !== 'dark' && t !== 'light') {
+            var h = new Date().getHours();
+            t = h >= 7 && h < 19 ? 'light' : 'dark';
+          }
+          document.documentElement.setAttribute('data-theme', t);
+          var a = localStorage.getItem('accent');
+          if (a === 'teal' || a === 'violet') document.documentElement.setAttribute('data-accent', a);
+        } catch (e) {}
+      })();
+    </script>
     %sveltekit.head%
   </head>
   <body><div>%sveltekit.body%</div></body>

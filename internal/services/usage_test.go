@@ -105,6 +105,55 @@ func TestUsageSnapshotShape(t *testing.T) {
 	}
 }
 
+// TestUsageSnapshotMergesModelsByLabel verifies that two DIFFERENT raw model ids
+// which map to the same display label (e.g. "claude-opus-4-8" and an older
+// "claude-3-opus-…" both → "Opus") are merged into ONE by-model row. Without the
+// merge the breakdown showed two "Opus" rows, and the UI's name-keyed {#each}
+// crashed with each_key_duplicate — leaving the Usage page stuck on "Loading…".
+func TestUsageSnapshotMergesModelsByLabel(t *testing.T) {
+	st := openStore(t)
+	today := dayToTime(todayDay())
+	todayInt := today.Year()*10000 + int(today.Month())*100 + today.Day()
+	seed := func(mdl string, in int64) {
+		if _, err := st.DB().Exec(
+			`INSERT INTO usage_rollup (agent_id, day, project_root, model,
+			   input_tokens, output_tokens, cache_tokens, total_tokens)
+			 VALUES (1,?,?,?,?,0,0,?)`, todayInt, "-proj", mdl, in, in); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Two distinct Opus builds + one Sonnet.
+	seed("claude-opus-4-8", 60)
+	seed("claude-3-opus-20240229", 20)
+	seed("claude-sonnet-4-6", 20)
+
+	snap, err := UsageSnapshot(st, "claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Names must be unique (no duplicate key for the UI's name-keyed list).
+	seen := map[string]bool{}
+	opus := 0
+	for _, m := range snap.ByModel {
+		if seen[m.Name] {
+			t.Errorf("duplicate by-model label %q in %+v", m.Name, snap.ByModel)
+		}
+		seen[m.Name] = true
+		if m.Name == "Opus" {
+			opus++
+		}
+	}
+	if opus != 1 {
+		t.Errorf("want exactly one merged Opus row, got %d in %+v", opus, snap.ByModel)
+	}
+	// Merged Opus = 80 of 100 tokens → 80%.
+	for _, m := range snap.ByModel {
+		if m.Name == "Opus" && m.Pct != 80 {
+			t.Errorf("merged Opus pct = %d, want 80", m.Pct)
+		}
+	}
+}
+
 // TestUsageSnapshotStreak verifies that StreakDays is correctly computed by
 // UsageSnapshot when today has data but yesterday does not.
 func TestUsageSnapshotStreak(t *testing.T) {

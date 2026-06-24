@@ -106,15 +106,10 @@ func modelLabel(m string) string {
 
 // UsageSnapshot assembles the full Usage & Cost payload: a 7-day token/cost trend
 // (zero-filled), window totals, by-project and by-model breakdowns, and a 56-day
-// activity heatmap + current streak. Cost is back-filled first (idempotent) so the
-// numbers are correct even without the scheduler. A store error short-circuits to
-// a zero snapshot (failsafe, §14).
+// activity heatmap + current streak. Cost (est_cost_usd) is stamped at ingest
+// (store.SetCostFn), so this is a READ-ONLY assembler — no write-lock contention.
+// A store error short-circuits to a zero snapshot (failsafe, §14).
 func UsageSnapshot(st *store.Store, agentCode string) (model.UsageSnapshot, error) {
-	// Keep est_cost_usd fresh from the local pricing table (same call the Overview
-	// uses). Cheap + idempotent; makes /api/usage correct on its own.
-	if err := st.BackfillRollupCost(Cost); err != nil {
-		return model.UsageSnapshot{}, err
-	}
 
 	today := todayDay()
 	heatSince := dayInt(dayToTime(today).AddDate(0, 0, -(heatWindowDays - 1)))
@@ -193,16 +188,28 @@ func UsageSnapshot(st *store.Store, agentCode string) (model.UsageSnapshot, erro
 	if err != nil {
 		return model.UsageSnapshot{}, err
 	}
+	// Multiple raw model ids can map to the same display label (e.g. two Opus
+	// builds both → "Opus"). Merge their tokens by label so the breakdown shows
+	// one row per label — otherwise the UI's name-keyed {#each} hits a duplicate
+	// key and crashes (each_key_duplicate), stalling the whole Usage page. We keep
+	// first-seen order in labelOrder so the result is deterministic before sorting.
 	var totalToks int64
+	byLabel := map[string]int64{}
+	var labelOrder []string
 	for _, m := range models {
+		label := modelLabel(m.Model)
+		if _, seen := byLabel[label]; !seen {
+			labelOrder = append(labelOrder, label)
+		}
+		byLabel[label] += m.TotalTokens
 		totalToks += m.TotalTokens
 	}
-	for _, m := range models {
+	for _, label := range labelOrder {
 		pct := 0
 		if totalToks > 0 {
-			pct = int(float64(m.TotalTokens) / float64(totalToks) * 100)
+			pct = int(float64(byLabel[label]) / float64(totalToks) * 100)
 		}
-		snap.ByModel = append(snap.ByModel, model.UsageShare{Name: modelLabel(m.Model), Pct: pct})
+		snap.ByModel = append(snap.ByModel, model.UsageShare{Name: label, Pct: pct})
 	}
 	sort.SliceStable(snap.ByModel, func(i, j int) bool { return snap.ByModel[i].Pct > snap.ByModel[j].Pct })
 

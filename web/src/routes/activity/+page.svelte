@@ -86,10 +86,12 @@
       </div>
 
       <!-- Scrollable event list.
-           Key expression: ts_ms + type + tool/skill name → stable identity across updates.
+           Key expression: ev.id — the local cache row id, a stable unique identity
+           across updates. (ts_ms+type+name collided when two events shared them,
+           triggering Svelte's each_key_duplicate; the row id never collides.)
            Blocked events get a red tint via LiveEventRow's .blocked class. -->
       <div class="stream">
-        {#each snap.recent as ev (ev.ts_ms + ev.type + (ev.tool_name ?? ev.skill_name ?? ''))}
+        {#each snap.recent as ev (ev.id)}
           <LiveEventRow {ev} />
         {/each}
         {#if snap.recent.length === 0}

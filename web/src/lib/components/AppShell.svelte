@@ -77,7 +77,7 @@
 
 <!-- ============ OUTER SHELL ============ -->
 <div
-  style="height:100vh;display:flex;flex-direction:column;background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px;overflow:hidden;"
+  style="height:100vh;display:flex;flex-direction:column;background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:15px;overflow:hidden;"
 >
 
   <!-- ============ TOP BAR ============ (mockup lines 72–126) -->
@@ -209,12 +209,12 @@
         <a
           {href}
           class="nav-link"
-          style="display:flex;align-items:center;gap:10px;width:100%;padding:8px 11px 8px 9px;border-radius:7px;text-decoration:none;font-size:13.5px;transition:.12s;background:{active ? 'var(--accent-soft)' : 'transparent'};color:{active ? 'var(--text)' : 'var(--text-dim)'};"
+          style="display:flex;align-items:center;gap:10px;width:100%;padding:9px 11px 9px 9px;border-radius:7px;text-decoration:none;font-size:14.5px;transition:.12s;background:{active ? 'var(--accent-soft)' : 'transparent'};color:{active ? 'var(--text)' : 'var(--text-dim)'};"
         >
           <!-- Accent bar: visible only on the active route -->
           <span style="width:2px;height:15px;border-radius:2px;flex:none;background:var(--accent);transition:.12s;opacity:{active ? 1 : 0};"></span>
           <!-- Route icon -->
-          <span style="width:18px;text-align:center;font-size:14px;color:{active ? 'var(--accent)' : 'var(--text-faint)'};">{icon}</span>
+          <span style="width:18px;text-align:center;font-size:15px;color:{active ? 'var(--accent)' : 'var(--text-faint)'};">{icon}</span>
           <!-- Route label -->
           <span style="flex:1;">{label}</span>
           <!-- Optional priority tag (P1 / P2) -->
@@ -237,7 +237,11 @@
 
     <!-- ============ MAIN CONTENT ============ -->
     <main style="flex:1;min-width:0;overflow-y:auto;position:relative;">
-      <div style="max-width:1180px;margin:0 auto;padding:26px 30px 60px;">
+      <!-- zoom:1.1 enlarges all page content ~10% (the design's base text was too
+           small to read comfortably). zoom magnifies + reflows, so fluid grids
+           still fit the column width and just grow taller (main scrolls). It lives
+           here, not on the 100vh shell root, so the fixed top-bar/nav stay pinned. -->
+      <div style="max-width:1180px;margin:0 auto;padding:26px 30px 60px;zoom:1.1;">
         {@render children()}
       </div>
     </main>

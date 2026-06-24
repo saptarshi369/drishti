@@ -19,10 +19,12 @@
   let update = $state<{ available: boolean; current: string; commands: string[] } | null>(null);
 
   onMount(() => {
-    // 1. Apply the persisted theme/accent to the <html> element so the DOM
-    //    attributes match the store values on first paint (avoids a flash of
-    //    wrong colours after hydration).
-    applyTheme($theme);
+    // 1. Apply the current theme/accent to the <html> element so the DOM
+    //    attributes match the store values. persist=false: the initial theme may
+    //    be the time-of-day default, and we must NOT freeze it as a manual choice
+    //    — only an explicit toggle (AppShell/Settings) persists. accent is always
+    //    an explicit value so it persists as before.
+    applyTheme($theme, false);
     applyAccent($accent);
 
     // 2. Open the single SSE stream. connect() returns a cleanup function that

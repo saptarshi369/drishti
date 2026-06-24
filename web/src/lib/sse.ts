@@ -33,6 +33,7 @@ export type Overview = {
 // RecentEvent matches the Go model.RecentEvent json tags (omitempty fields are
 // optional here so TypeScript doesn't require them when the server omits them).
 export type RecentEvent = {
+  id: number;           // local cache row id — stable, unique key for the live stream
   ts_ms: number;
   type: string;
   session_id: string;

@@ -108,6 +108,38 @@ func TestRecentEventsNewestFirst(t *testing.T) {
 	}
 }
 
+// TestRecentEventsExposeUniqueIDs proves each RecentEvent carries a distinct DB
+// id so the live-stream {#each} can key on it. Two events that share
+// ts_ms+type+session_id — a real collision that crashed the UI with Svelte's
+// each_key_duplicate — must still come back with different ids.
+func TestRecentEventsExposeUniqueIDs(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "drishti.db")
+	s, _ := Open(p)
+	defer s.Close()
+	sf, _ := s.UpsertSourceFile(model.SourceFile{AgentCode: "claude", Kind: "transcript", AbsPath: "/r.jsonl", State: "active"})
+	s.ApplyIngest(IngestBatch{
+		SourceFileID: sf,
+		Events: []model.Event{
+			{AgentCode: "claude", TypeCode: "tool_use", SourceCode: "transcript", SessionID: "s1", TsMs: 5, ToolName: "Bash", DedupeKey: "a"},
+			{AgentCode: "claude", TypeCode: "tool_use", SourceCode: "transcript", SessionID: "s1", TsMs: 5, ToolName: "Bash", DedupeKey: "b"},
+		},
+		NewOffset: 1,
+	})
+	got, err := s.RecentEvents(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("recent = %d, want 2", len(got))
+	}
+	if got[0].ID == 0 || got[1].ID == 0 {
+		t.Fatalf("ids not populated: %+v", got)
+	}
+	if got[0].ID == got[1].ID {
+		t.Errorf("ids not unique: both got %d", got[0].ID)
+	}
+}
+
 // TestApplyIngestFoldsSkillStats verifies that ApplyIngest:
 //  1. persists the tool_name column on a tool_use event, and
 //  2. folds skill events into skill_stats (trigger_count_total increments,
@@ -193,6 +225,48 @@ func TestAgentID(t *testing.T) {
 	}
 	if id, ok := AgentID("codex"); id != 0 || ok {
 		t.Errorf("AgentID(codex) = (%d,%v), want (0,false)", id, ok)
+	}
+}
+
+// TestApplyIngestComputesRollupCostFromInjectedFn proves the perf fix: once a
+// pricing function is injected via SetCostFn, ApplyIngest itself sets
+// est_cost_usd on the rollup row — so the read/broadcast path never has to call
+// BackfillRollupCost. The cost is recomputed from the row's *folded* total, so a
+// second batch on the same day/model updates the cost to match the new total
+// (SET, not naive-add): in=10 then in=5 → total in=15 → cost 15 with a $1/input
+// pricing fn. No BackfillRollupCost call appears in this test on purpose.
+func TestApplyIngestComputesRollupCostFromInjectedFn(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "drishti.db")
+	s, _ := Open(p)
+	defer s.Close()
+	// Pricing fn = $1 per input token, so cost tracks the folded input total and
+	// we can tell "set from current total" apart from "added per batch".
+	s.SetCostFn(func(_ string, in, _, _, _ int64) float64 { return float64(in) })
+	day := todayYYYYMMDD()
+	sf, _ := s.UpsertSourceFile(model.SourceFile{AgentCode: "claude", Kind: "transcript", AbsPath: "/c.jsonl", State: "active"})
+
+	s.ApplyIngest(IngestBatch{
+		SourceFileID: sf,
+		Deltas:       []model.SessionDelta{{SessionID: "s1", Model: "m", Day: day, InputTokens: 10, StartedMs: 1}},
+		NewOffset:    1,
+	})
+	var got float64
+	s.DB().QueryRow(`SELECT est_cost_usd FROM usage_rollup WHERE day=?`, day).Scan(&got)
+	if got != 10.0 {
+		t.Fatalf("after first ingest est_cost_usd = %v, want 10.0 (cost set at ingest)", got)
+	}
+
+	// Fold a second batch into the SAME rollup row (same day+model). Total input
+	// becomes 15, so the recomputed cost must be 15 — not left at 10, not 10+5
+	// added blindly without reading the folded total.
+	s.ApplyIngest(IngestBatch{
+		SourceFileID: sf,
+		Deltas:       []model.SessionDelta{{SessionID: "s2", Model: "m", Day: day, InputTokens: 5, StartedMs: 2}},
+		NewOffset:    2,
+	})
+	s.DB().QueryRow(`SELECT est_cost_usd FROM usage_rollup WHERE day=?`, day).Scan(&got)
+	if got != 15.0 {
+		t.Errorf("after second ingest est_cost_usd = %v, want 15.0 (recomputed from folded total)", got)
 	}
 }
 

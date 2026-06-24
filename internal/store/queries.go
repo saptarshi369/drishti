@@ -134,6 +134,15 @@ func (s *Store) ApplyIngest(b IngestBatch) (int, error) {
 	defer func() { _ = tx.Rollback() }()
 
 	inserted := 0
+	// rollupKey identifies one usage_rollup row touched by this batch. We collect
+	// the distinct keys so that — after the token totals are folded — we can stamp
+	// est_cost_usd on exactly those rows (cheap), instead of the read path later
+	// rewriting the whole table on every broadcast.
+	type rollupKey struct {
+		day   int
+		model string
+	}
+	touched := map[rollupKey]struct{}{}
 	for _, e := range b.Events {
 		// Write the Module 2 event columns: tool_name, skill_name, status.
 		// nullIfEmpty stores "" as SQL NULL (keeps partial indexes lean).
@@ -201,6 +210,28 @@ func (s *Store) ApplyIngest(b IngestBatch) (int, error) {
 			d.Day, b.ProjectRoot, d.Model, d.InputTokens, d.OutputTokens, d.CacheTokens, total, d.PromptCount); err != nil {
 			return 0, fmt.Errorf("fold rollup: %w", err)
 		}
+		touched[rollupKey{day: d.Day, model: d.Model}] = struct{}{}
+	}
+
+	// Stamp est_cost_usd on the rows this batch folded, computed from each row's
+	// now-current totals. Doing it here — once per touched row, inside the same
+	// transaction — keeps cost correct without the read path ever rewriting the
+	// whole table. cache tokens are predominantly reads, priced at the read rate
+	// (mirrors BackfillRollupCost). A nil costFn (no pricing wired) skips this.
+	if s.costFn != nil {
+		for k := range touched {
+			var id, in, out, cache int64
+			if err := tx.QueryRow(`
+				SELECT id, input_tokens, output_tokens, cache_tokens FROM usage_rollup
+				WHERE agent_id=1 AND day=? AND project_root=? AND model=?`,
+				k.day, b.ProjectRoot, k.model).Scan(&id, &in, &out, &cache); err != nil {
+				return 0, fmt.Errorf("read folded rollup for cost: %w", err)
+			}
+			cost := s.costFn(k.model, in, out, cache, 0)
+			if _, err := tx.Exec(`UPDATE usage_rollup SET est_cost_usd=? WHERE id=?`, cost, id); err != nil {
+				return 0, fmt.Errorf("stamp rollup cost: %w", err)
+			}
+		}
 	}
 
 	if b.SourceFileID != 0 {
@@ -222,7 +253,7 @@ func (s *Store) ApplyIngest(b IngestBatch) (int, error) {
 // the API response, keeping prompt-row payloads compact.
 func (s *Store) RecentEvents(limit int) ([]model.RecentEvent, error) {
 	rows, err := s.db.Query(`
-		SELECT e.ts_ms, et.code, COALESCE(e.session_id,''),
+		SELECT e.id, e.ts_ms, et.code, COALESCE(e.session_id,''),
 		       COALESCE(e.tool_name,''), COALESCE(e.skill_name,''), COALESCE(e.status,'')
 		FROM events e JOIN event_types et ON et.id = e.type_id
 		ORDER BY e.id DESC LIMIT ?`, limit)
@@ -233,7 +264,7 @@ func (s *Store) RecentEvents(limit int) ([]model.RecentEvent, error) {
 	var out []model.RecentEvent
 	for rows.Next() {
 		var r model.RecentEvent
-		if err := rows.Scan(&r.TsMs, &r.Type, &r.SessionID, &r.ToolName, &r.SkillName, &r.Status); err != nil {
+		if err := rows.Scan(&r.ID, &r.TsMs, &r.Type, &r.SessionID, &r.ToolName, &r.SkillName, &r.Status); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
