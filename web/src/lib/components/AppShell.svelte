@@ -37,14 +37,18 @@
   let rootInfo = $state<ActiveRoot | null>(null);
   let rootOpen = $state(false);
 
-  // rootLabel: a compact display name for a root path — "~" for the home dir,
-  // otherwise the final path segment (the project folder name).
+  // rootLabel: a compact display name for a scope — "All" for the empty scope
+  // (no filter), otherwise the final path segment (the project folder name).
   function rootLabel(p: string): string {
-    if (!p) return '~';
-    if (rootInfo && p === rootInfo.home) return '~';
+    if (!p) return 'All';
     const parts = p.replace(/\/+$/, '').split('/');
-    return parts[parts.length - 1] || '~';
+    return parts[parts.length - 1] || 'All';
   }
+
+  // rootMenu: the dropdown options — "All" (empty scope) first, then each folder.
+  const rootMenu = $derived(
+    rootInfo ? [{ value: '', label: 'All' }, ...rootInfo.roots.map((r) => ({ value: r, label: rootLabel(r) }))] : []
+  );
 
   // loadRoots fetches the selectable roots + current selection. Called on mount and
   // whenever the dropdown opens, so roots added in Settings appear without a reload.
@@ -140,10 +144,10 @@
     <div style="position:relative;">
       <button
         onclick={() => { rootOpen = !rootOpen; if (rootOpen) loadRoots(); }}
-        title="Switch the active project root"
+        title="Filter the dashboard by folder"
         style="display:flex;align-items:center;gap:7px;height:30px;padding:0 11px;border:1px solid var(--border);border-radius:7px;background:var(--panel);color:var(--text);font:inherit;font-size:12.5px;cursor:pointer;"
       >
-        <span style="color:var(--text-faint);">⌂ Root</span>
+        <span style="color:var(--text-faint);">Folder</span>
         <span style="font-family:'IBM Plex Mono',monospace;color:var(--text);">{rootLabel(rootInfo?.current ?? '')}</span>
         <span style="color:var(--text-faint);font-size:9px;">▾</span>
       </button>
@@ -151,24 +155,24 @@
       {#if rootOpen && rootInfo}
         <!-- Click-catcher: closes the menu when clicking elsewhere. -->
         <button
-          aria-label="Close root menu"
+          aria-label="Close folder menu"
           onclick={() => (rootOpen = false)}
           style="position:fixed;inset:0;z-index:40;background:transparent;border:none;cursor:default;"
         ></button>
         <div
           style="position:absolute;top:34px;left:0;z-index:41;min-width:220px;max-height:320px;overflow-y:auto;background:var(--panel);border:1px solid var(--border);border-radius:9px;box-shadow:var(--shadow);padding:5px;animation:hud-in .12s ease;"
         >
-          {#each rootInfo.roots as r (r)}
-            {@const isCurrent = r === rootInfo.current}
+          {#each rootMenu as opt (opt.value)}
+            {@const isCurrent = opt.value === rootInfo.current}
             <button
-              onclick={() => chooseRoot(r)}
-              title={r}
+              onclick={() => chooseRoot(opt.value)}
+              title={opt.value || 'All projects (no filter)'}
               style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:7px 9px;border:none;border-radius:6px;background:{isCurrent ? 'var(--accent-soft)' : 'transparent'};color:var(--text);font:inherit;font-size:12.5px;cursor:pointer;"
             >
               <span style="width:14px;color:var(--accent);">{isCurrent ? '✓' : ''}</span>
               <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-                {rootLabel(r)}
-                {#if r === rootInfo.home}<span style="color:var(--text-faint);"> · user global</span>{/if}
+                {opt.label}
+                {#if opt.value === ''}<span style="color:var(--text-faint);"> · everything</span>{/if}
               </span>
             </button>
           {/each}

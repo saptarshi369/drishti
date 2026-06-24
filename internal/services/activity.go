@@ -32,7 +32,10 @@ const sparkBuckets = 30
 //
 // Every store error short-circuits and returns a zero ActivitySnapshot. The
 // caller decides how to handle the error; we never panic (spec §14 / failsafe).
-func ActivitySnapshot(st *store.Store, projectRoot string) (model.ActivitySnapshot, error) {
+// projectRoot scopes the per-project skill list (filesystem path); projectKey
+// scopes the event-derived fields — counters, recent ticker, sparklines — to one
+// encoded project dir ("" = All, no filter).
+func ActivitySnapshot(st *store.Store, projectRoot, projectKey string) (model.ActivitySnapshot, error) {
 	// Anchor all time-relative queries to a single "now" so every field in the
 	// snapshot is coherent (no sub-millisecond drift between calls).
 	now := time.Now().UnixMilli()
@@ -44,7 +47,7 @@ func ActivitySnapshot(st *store.Store, projectRoot string) (model.ActivitySnapsh
 
 	// Tally all events in the last 24 hours, across all sessions.
 	// Passing "" as sessionID means "no session filter" (see ActivityCounters docs).
-	last24, err := st.ActivityCounters(dayAgo, "")
+	last24, err := st.ActivityCounters(dayAgo, "", projectKey)
 	if err != nil {
 		return model.ActivitySnapshot{}, err
 	}
@@ -64,13 +67,13 @@ func ActivitySnapshot(st *store.Store, projectRoot string) (model.ActivitySnapsh
 	var session model.CounterSet
 	if sessID != "" {
 		// sinceMs=0 means "all time", restricted by session id only.
-		if session, err = st.ActivityCounters(0, sessID); err != nil {
+		if session, err = st.ActivityCounters(0, sessID, projectKey); err != nil {
 			return model.ActivitySnapshot{}, err
 		}
 	}
 
 	// Fetch the 40 most-recent events for the live ticker (newest first from the store).
-	recent, err := st.RecentEvents(40)
+	recent, err := st.RecentEvents(40, projectKey)
 	if err != nil {
 		return model.ActivitySnapshot{}, err
 	}
@@ -86,13 +89,24 @@ func ActivitySnapshot(st *store.Store, projectRoot string) (model.ActivitySnapsh
 	// EventRatePerMinute always returns a slice of exactly sparkBuckets elements
 	// (zero-filled for quiet minutes), so PromptsPerMin and SkillsPerMin are
 	// always length 30 — the UI can render them without length checks.
-	prompts, err := st.EventRatePerMinute("prompt", now, sparkBuckets)
+	prompts, err := st.EventRatePerMinute("prompt", now, sparkBuckets, projectKey)
 	if err != nil {
 		return model.ActivitySnapshot{}, err
 	}
-	skillSpark, err := st.EventRatePerMinute("skill", now, sparkBuckets)
+	skillSpark, err := st.EventRatePerMinute("skill", now, sparkBuckets, projectKey)
 	if err != nil {
 		return model.ActivitySnapshot{}, err
+	}
+
+	// Normalise nil slices to empty ones so the payload serialises Recent/Skills as
+	// [] not null. The SSE frame marshals this struct directly, and the Overview
+	// does recent.slice(...) — a null would crash the page. This matters now that a
+	// folder filter can legitimately yield no recent events for a scope.
+	if recent == nil {
+		recent = []model.RecentEvent{}
+	}
+	if skills == nil {
+		skills = []model.SkillTrigger{}
 	}
 
 	return model.ActivitySnapshot{

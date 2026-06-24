@@ -8,6 +8,25 @@ import (
 	"github.com/saptarshi369/drishti/internal/store"
 )
 
+// TestActivitySnapshotRecentNeverNil verifies that a scope with no matching events
+// still yields a non-nil (empty) Recent slice. The SSE activity frame serializes
+// the snapshot directly, and the Overview does recent.slice(...) — a JSON null
+// (from a Go nil slice) would crash the page. This became reachable once the live
+// feed could be filtered to a folder that has no recent activity.
+func TestActivitySnapshotRecentNeverNil(t *testing.T) {
+	st := openStore(t)
+	snap, err := ActivitySnapshot(st, "", "-no-such-project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.Recent == nil {
+		t.Error("ActivitySnapshot.Recent is nil; want a non-nil empty slice ([] not null)")
+	}
+	if snap.Skills == nil {
+		t.Error("ActivitySnapshot.Skills is nil; want a non-nil empty slice ([] not null)")
+	}
+}
+
 // TestActivitySnapshotAssembles inserts events with near-now timestamps (so
 // they fall inside the 24-hour rolling window), calls ActivitySnapshot, and
 // verifies the assembled payload has populated counters and sparkline slices.
@@ -34,7 +53,7 @@ func TestActivitySnapshotAssembles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	snap, err := ActivitySnapshot(st, "")
+	snap, err := ActivitySnapshot(st, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

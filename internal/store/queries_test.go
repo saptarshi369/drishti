@@ -13,6 +13,67 @@ func todayYYYYMMDD() int {
 	return n.Year()*10000 + int(n.Month())*100 + n.Day()
 }
 
+// TestProjectKeyFiltersEventsAndUsage proves the Overview root filter: events and
+// usage carry a project key (the encoded Claude project dir), and the read queries
+// filter by it. An empty key means "All" (no filter). This is what lets the
+// top-bar dropdown scope spend/prompts AND the live-activity feed to one folder.
+func TestProjectKeyFiltersEventsAndUsage(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "drishti.db")
+	s, _ := Open(p)
+	defer s.Close()
+	s.SetCostFn(func(_ string, in, _, _, _ int64) float64 { return float64(in) }) // $1/input token
+	day := todayYYYYMMDD()
+	now := time.Now().UnixMilli()
+	sf, _ := s.UpsertSourceFile(model.SourceFile{AgentCode: "claude", Kind: "transcript", AbsPath: "/t.jsonl", State: "active"})
+
+	ingest := func(key, sess, dedupe string, in int64) {
+		s.ApplyIngest(IngestBatch{
+			SourceFileID: sf,
+			ProjectRoot:  key,
+			Events:       []model.Event{{AgentCode: "claude", TypeCode: "prompt", SourceCode: "transcript", SessionID: sess, TsMs: now, DedupeKey: dedupe}},
+			Deltas:       []model.SessionDelta{{SessionID: sess, Model: "claude-opus-4-8", Day: day, InputTokens: in, PromptCount: 1, StartedMs: 1}},
+		})
+	}
+	ingest("-proj-a", "sa", "a", 10)
+	ingest("-proj-b", "sb", "b", 5)
+
+	// RecentEvents: key filters; "" returns all.
+	if got, _ := s.RecentEvents(10, "-proj-a"); len(got) != 1 {
+		t.Errorf("RecentEvents(-proj-a) = %d events, want 1", len(got))
+	}
+	if got, _ := s.RecentEvents(10, ""); len(got) != 2 {
+		t.Errorf("RecentEvents(all) = %d events, want 2", len(got))
+	}
+
+	// OverviewKPIs: spend + prompts scoped by key.
+	ka, _ := s.OverviewKPIs("-proj-a")
+	if ka.PromptsToday != 1 || ka.SpendTodayUSD != 10 {
+		t.Errorf("OverviewKPIs(-proj-a) = %+v, want prompts=1 spend=10", ka)
+	}
+	kAll, _ := s.OverviewKPIs("")
+	if kAll.PromptsToday != 2 || kAll.SpendTodayUSD != 15 {
+		t.Errorf("OverviewKPIs(all) = %+v, want prompts=2 spend=15", kAll)
+	}
+
+	// ActivityCounters + EventRatePerMinute: event tallies scoped by key.
+	ca, _ := s.ActivityCounters(0, "", "-proj-a")
+	if ca.Prompts != 1 {
+		t.Errorf("ActivityCounters(-proj-a).Prompts = %d, want 1", ca.Prompts)
+	}
+	cAll, _ := s.ActivityCounters(0, "", "")
+	if cAll.Prompts != 2 {
+		t.Errorf("ActivityCounters(all).Prompts = %d, want 2", cAll.Prompts)
+	}
+	ra, _ := s.EventRatePerMinute("prompt", now, 5, "-proj-a")
+	sum := 0
+	for _, v := range ra {
+		sum += v
+	}
+	if sum != 1 {
+		t.Errorf("EventRatePerMinute(-proj-a) sum = %d, want 1", sum)
+	}
+}
+
 func TestApplyIngestInsertsAndIsIdempotent(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "drishti.db")
 	s, _ := Open(p)
@@ -71,7 +132,7 @@ func TestOverviewKPIsReadsRollup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	k, err := s.OverviewKPIs()
+	k, err := s.OverviewKPIs("")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +157,7 @@ func TestRecentEventsNewestFirst(t *testing.T) {
 		},
 		NewOffset: 1,
 	})
-	got, err := s.RecentEvents(10)
+	got, err := s.RecentEvents(10, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +186,7 @@ func TestRecentEventsExposeUniqueIDs(t *testing.T) {
 		},
 		NewOffset: 1,
 	})
-	got, err := s.RecentEvents(10)
+	got, err := s.RecentEvents(10, "")
 	if err != nil {
 		t.Fatal(err)
 	}

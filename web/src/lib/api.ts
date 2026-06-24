@@ -320,9 +320,10 @@ export const listDirs = (path: string) =>
 export const setRoots = (paths: string[]) =>
   send<{ saved: boolean }>('/api/roots', 'PUT', { paths });
 
-/** ActiveRoot is the top-bar selector's view: the current scope, the daemon's
- *  default, the home dir, and every selectable root (home + configured roots). */
-export type ActiveRoot = { current: string; default: string; home: string; roots: string[] };
+/** ActiveRoot is the top-bar selector's view: the current scope ("" = All), the
+ *  daemon's primary folder (info), and every configured folder. The "All" option
+ *  is the empty string and is added client-side. */
+export type ActiveRoot = { current: string; default: string; roots: string[] };
 
 /** getActiveRoot fetches the selectable roots + current selection (GET /api/active-root). */
 export const getActiveRoot = () => get<ActiveRoot>('/api/active-root');

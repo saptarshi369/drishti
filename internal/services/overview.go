@@ -2,12 +2,24 @@ package services
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/saptarshi369/drishti/internal/model"
 	"github.com/saptarshi369/drishti/internal/skills"
 	"github.com/saptarshi369/drishti/internal/store"
 )
+
+// EncodeProjectKey maps a watched-folder absolute path to the key Claude uses for
+// that project's transcript directory (and therefore the value stored in
+// usage_rollup.project_root and events.project_root): every "/" becomes "-".
+// An empty path means the "All" scope, which encodes to "" (no filter).
+func EncodeProjectKey(absPath string) string {
+	if absPath == "" {
+		return ""
+	}
+	return strings.ReplaceAll(absPath, "/", "-")
+}
 
 // Overview is the assembled payload for the Overview screen / SSE "counters"
 // frame. KPIs + Recent are global (per agent); the rest are the M8 aggregates
@@ -29,6 +41,7 @@ type Overview struct {
 // caller fills these via the M7 accessors (never the raw fields).
 type OverviewParams struct {
 	Root            string
+	ProjectKey      string // encoded project dir for usage/event filtering; "" = All
 	WindowTokens    int
 	SkillThresholds skills.Thresholds
 }
@@ -47,11 +60,11 @@ const blockedAlertWindowMs = 60 * 60 * 1000 // 60 minutes
 func OverviewSnapshot(st *store.Store, p OverviewParams) (Overview, error) {
 	// NOTE: no cost backfill here. est_cost_usd is stamped at ingest (store.SetCostFn),
 	// so this hot read/broadcast path is read-only and never contends the write lock.
-	kpis, err := st.OverviewKPIs()
+	kpis, err := st.OverviewKPIs(p.ProjectKey)
 	if err != nil {
 		return Overview{}, err
 	}
-	recent, err := st.RecentEvents(20)
+	recent, err := st.RecentEvents(20, p.ProjectKey)
 	if err != nil {
 		return Overview{}, err
 	}
@@ -101,7 +114,7 @@ func OverviewSnapshot(st *store.Store, p OverviewParams) (Overview, error) {
 	now := time.Now().UnixMilli()
 	dayAgo := now - 24*int64(time.Hour/time.Millisecond)
 	var hookErrors int
-	if c, cerr := st.ActivityCounters(dayAgo, ""); cerr == nil {
+	if c, cerr := st.ActivityCounters(dayAgo, "", p.ProjectKey); cerr == nil {
 		hookErrors = c.Errors
 	}
 
@@ -117,7 +130,7 @@ func OverviewSnapshot(st *store.Store, p OverviewParams) (Overview, error) {
 	// Alerts: quota + recent blocked + high security + dead skills.
 	quota, _ := QuotaSnapshot(st, "claude") // err → zero value (Available=false) → no quota alert
 	var blocked []model.RecentEvent
-	if evs, eerr := st.EventsPage("blocked", 5, 0); eerr == nil {
+	if evs, eerr := st.EventsPage("blocked", 5, 0, p.ProjectKey); eerr == nil {
 		for _, e := range evs {
 			if now-e.TsMs <= blockedAlertWindowMs {
 				blocked = append(blocked, e)

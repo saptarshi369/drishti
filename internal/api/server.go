@@ -123,16 +123,14 @@ func (s *Server) SetSelectedRoot(root string) {
 	s.selectedRoot = root
 }
 
-// currentDefaultRoot returns the active view root under a read lock: the user's
-// top-bar selection when set, otherwise the daemon's primary root. This single
+// currentDefaultRoot returns the active view root under a read lock. It is the
+// user's top-bar selection; the default (and the explicit "All" choice) is the
+// empty string, meaning user-global inventory + no usage/event filter. This single
 // accessor is what every screen scopes to, so a selection re-scopes them all.
 func (s *Server) currentDefaultRoot() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if s.selectedRoot != "" {
-		return s.selectedRoot
-	}
-	return s.defaultRoot
+	return s.selectedRoot
 }
 
 // currentPrimaryRoot returns the daemon's configured primary root (ignoring any

@@ -43,7 +43,7 @@
   <header class="head">
     <div>
       <h1>Command Center</h1>
-      <p class="sub">Everything active, live, and what it costs — for <span class="root">{$activeRootLabel || '~'}</span></p>
+      <p class="sub">Everything active, live, and what it costs — for <span class="root">{$activeRootLabel || 'All'}</span></p>
     </div>
     <div class="updated">Updated <span>{clock(nowMs)}</span></div>
   </header>
@@ -95,9 +95,10 @@
       {#if $activity}
         <div class="spark"><Sparkline data={$activity.sparklines.prompts_per_min} width={300} height={46} /></div>
         <div class="events">
-          {#each $activity.recent.slice(0, 8) as e (e.id)}
+          {#each ($activity.recent ?? []).slice(0, 8) as e (e.id)}
             <LiveEventRow ev={e} />
           {/each}
+          {#if ($activity.recent ?? []).length === 0}<div class="empty">No activity in this scope yet.</div>{/if}
         </div>
       {:else}<div class="empty">No activity yet — fire a prompt in Claude Code.</div>{/if}
     </div>

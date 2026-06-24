@@ -10,23 +10,23 @@ import (
 	"github.com/saptarshi369/drishti/internal/config"
 )
 
-// TestActiveRootSelectChangesScope verifies the top-bar root selector: PUT
-// /api/active-root switches the global view root (what currentDefaultRoot returns,
-// which scopes the Overview/inventory/etc.), and GET lists the selectable roots
-// plus the current selection. An unknown root is rejected and leaves scope intact.
+// TestActiveRootSelectChangesScope verifies the top-bar scope selector: the default
+// scope is "All" (empty string); PUT /api/active-root switches it to a folder (which
+// scopes the Overview/inventory/etc.) or back to All (""); GET lists the configured
+// folders + the current selection. An unknown root is rejected and leaves scope intact.
 func TestActiveRootSelectChangesScope(t *testing.T) {
 	srv := NewServer("test", nil)
 	cfg := config.Default()
 	cfg.Roots = []string{"/tmp/proj-a", "/tmp/proj-b"}
 	srv.SetConfig(cfg)
-	srv.SetDefaultRoot("/tmp/proj-a") // daemon's primary root
 	h := srv.Handler()
 
-	if got := srv.currentDefaultRoot(); got != "/tmp/proj-a" {
-		t.Fatalf("initial scope = %q, want /tmp/proj-a", got)
+	// Default scope is "All" (empty), not any configured folder.
+	if got := srv.currentDefaultRoot(); got != "" {
+		t.Fatalf("initial scope = %q, want \"\" (All)", got)
 	}
 
-	// GET lists the options (home + both roots) and the current selection.
+	// GET lists the configured folders and the current selection (All = "").
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/active-root", nil))
 	if rec.Code != http.StatusOK {
@@ -39,14 +39,14 @@ func TestActiveRootSelectChangesScope(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Current != "/tmp/proj-a" {
-		t.Errorf("GET current = %q, want /tmp/proj-a", got.Current)
+	if got.Current != "" {
+		t.Errorf("GET current = %q, want \"\" (All)", got.Current)
 	}
 	if !contains(got.Roots, "/tmp/proj-a") || !contains(got.Roots, "/tmp/proj-b") {
-		t.Errorf("GET roots = %v, want both configured roots", got.Roots)
+		t.Errorf("GET roots = %v, want both configured folders", got.Roots)
 	}
 
-	// PUT switches the active root to proj-b.
+	// PUT switches the active scope to proj-b.
 	rec2 := httptest.NewRecorder()
 	h.ServeHTTP(rec2, httptest.NewRequest(http.MethodPut, "/api/active-root",
 		strings.NewReader(`{"root":"/tmp/proj-b"}`)))
@@ -57,7 +57,20 @@ func TestActiveRootSelectChangesScope(t *testing.T) {
 		t.Errorf("after PUT scope = %q, want /tmp/proj-b", got)
 	}
 
-	// PUT with a root that is neither home nor a configured root is rejected.
+	// PUT "" selects All again (no filter).
+	recAll := httptest.NewRecorder()
+	h.ServeHTTP(recAll, httptest.NewRequest(http.MethodPut, "/api/active-root",
+		strings.NewReader(`{"root":""}`)))
+	if recAll.Code != http.StatusOK {
+		t.Fatalf("PUT All status = %d, want 200", recAll.Code)
+	}
+	if got := srv.currentDefaultRoot(); got != "" {
+		t.Errorf("after PUT All scope = %q, want \"\"", got)
+	}
+
+	// Switch to proj-b, then an unknown root must be rejected and not change scope.
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPut, "/api/active-root",
+		strings.NewReader(`{"root":"/tmp/proj-b"}`)))
 	rec3 := httptest.NewRecorder()
 	h.ServeHTTP(rec3, httptest.NewRequest(http.MethodPut, "/api/active-root",
 		strings.NewReader(`{"root":"/tmp/not-a-root"}`)))
