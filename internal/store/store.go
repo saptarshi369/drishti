@@ -17,6 +17,21 @@ type Store struct {
 	db   *sql.DB
 	wmu  sync.Mutex // held by every write path; readers don't take it
 	path string
+	// costFn prices a token bundle in USD. The store stays pricing-agnostic: the
+	// services layer injects this once at startup (SetCostFn). When set, ApplyIngest
+	// stamps est_cost_usd on each rollup row it folds, so the hot read/broadcast path
+	// never has to recompute cost over the whole table. A nil costFn means "no
+	// pricing wired" → ingest leaves est_cost_usd untouched (the pre-fix behaviour).
+	costFn func(model string, in, out, cacheRead, cacheWrite int64) float64
+}
+
+// SetCostFn injects the pricing function used to stamp est_cost_usd on rollup
+// rows at ingest time. Call once during wiring, before ingestion starts, so the
+// store can keep cost current without the read path ever rewriting the table.
+func (s *Store) SetCostFn(fn func(model string, in, out, cacheRead, cacheWrite int64) float64) {
+	s.wmu.Lock()
+	defer s.wmu.Unlock()
+	s.costFn = fn
 }
 
 // dsn builds the connection string with our locked PRAGMAs (spec §7.1).

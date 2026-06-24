@@ -81,7 +81,7 @@
       {#if $activity}
         <div class="spark"><Sparkline data={$activity.sparklines.prompts_per_min} width={300} height={46} /></div>
         <div class="events">
-          {#each $activity.recent.slice(0, 6) as e (e.ts_ms + e.type + e.session_id)}
+          {#each $activity.recent.slice(0, 6) as e (e.id)}
             <LiveEventRow ev={e} />
           {/each}
         </div>

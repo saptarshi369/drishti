@@ -278,9 +278,10 @@ func (s *Store) EventsPage(typeCode string, limit int, beforeID int64) ([]model.
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	// The SQL selects a local `id` column (for the keyset cursor) but does NOT
-	// expose it on model.RecentEvent — the stream display doesn't need the raw
-	// database id; privacy and simplicity are served by omitting it.
+	// The SQL selects e.id both for the keyset cursor (WHERE e.id < before) and to
+	// expose it on model.RecentEvent.ID — the UI needs a stable, unique key for the
+	// stream list (two events can share ts_ms+type+session_id). The id is just the
+	// local cache row number, not sensitive (Privacy D8 is about raw text/names).
 	rows, err := s.db.Query(`
 		SELECT e.id, e.ts_ms, et.code, COALESCE(e.session_id,''),
 		       COALESCE(e.tool_name,''), COALESCE(e.skill_name,''), COALESCE(e.status,'')
@@ -294,9 +295,8 @@ func (s *Store) EventsPage(typeCode string, limit int, beforeID int64) ([]model.
 	defer func() { _ = rows.Close() }()
 	var out []model.RecentEvent
 	for rows.Next() {
-		var id int64 // local variable; not exposed on the model struct
 		var r model.RecentEvent
-		if err := rows.Scan(&id, &r.TsMs, &r.Type, &r.SessionID, &r.ToolName, &r.SkillName, &r.Status); err != nil {
+		if err := rows.Scan(&r.ID, &r.TsMs, &r.Type, &r.SessionID, &r.ToolName, &r.SkillName, &r.Status); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

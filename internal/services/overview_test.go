@@ -17,6 +17,10 @@ func today() int {
 func TestOverviewSnapshotAssembles(t *testing.T) {
 	st, _ := store.Open(filepath.Join(t.TempDir(), "drishti.db"))
 	defer st.Close()
+	// Cost now originates AT INGEST (perf fix): the store stamps est_cost_usd when
+	// it folds the rollup, so the read path never rewrites the table. Inject the
+	// pricing fn before ingesting so spend is correct without any read-path backfill.
+	st.SetCostFn(Cost)
 	sf, _ := st.UpsertSourceFile(model.SourceFile{AgentCode: "claude", Kind: "transcript", AbsPath: "/x.jsonl", State: "active"})
 	st.ApplyIngest(store.IngestBatch{
 		SourceFileID: sf,

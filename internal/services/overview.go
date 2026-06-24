@@ -37,16 +37,16 @@ type OverviewParams struct {
 // alert, so stale blocks age out and the alert auto-clears (M8 spec §7).
 const blockedAlertWindowMs = 60 * 60 * 1000 // 60 minutes
 
-// OverviewSnapshot assembles the full Overview payload. The baseline (cost
-// backfill, KPIs, recent events) returns an error on failure — those are the
-// slice guarantees the page cannot do without. Every per-root aggregate degrades
+// OverviewSnapshot assembles the full Overview payload. The baseline (KPIs,
+// recent events) returns an error on failure — those are the slice guarantees
+// the page cannot do without. It is READ-ONLY: cost is stamped at ingest, so the
+// 1s broadcast never takes the write lock. Every per-root aggregate degrades
 // independently (§14): a failing section leaves its zero/empty value and the rest
 // of the snapshot is still returned, mirroring snapshotMessages' activity/quota
 // handling.
 func OverviewSnapshot(st *store.Store, p OverviewParams) (Overview, error) {
-	if err := st.BackfillRollupCost(Cost); err != nil {
-		return Overview{}, err
-	}
+	// NOTE: no cost backfill here. est_cost_usd is stamped at ingest (store.SetCostFn),
+	// so this hot read/broadcast path is read-only and never contends the write lock.
 	kpis, err := st.OverviewKPIs()
 	if err != nil {
 		return Overview{}, err

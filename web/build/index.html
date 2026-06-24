@@ -3,19 +3,41 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link href="/_app/immutable/entry/start.yfj2fk2G.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/CjJTrK9X.js" rel="modulepreload">
+    <!-- Empty inline icon: tells the browser there is no favicon so it stops
+         requesting /favicon.ico (which the embedded static server 404s on). -->
+    <link rel="icon" href="data:," />
+    <!-- Pre-paint theme: apply the user's stored choice, or fall back to
+         time-of-day (light 07:00–18:59, dark otherwise), BEFORE first paint so
+         there is no dark→light flash. Mirrors $lib/theme; keep the 7/19 boundary
+         and accent logic in sync. Wrapped in try/catch — a storage error must
+         never block the page. -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('theme');
+          if (t !== 'dark' && t !== 'light') {
+            var h = new Date().getHours();
+            t = h >= 7 && h < 19 ? 'light' : 'dark';
+          }
+          document.documentElement.setAttribute('data-theme', t);
+          var a = localStorage.getItem('accent');
+          if (a === 'teal' || a === 'violet') document.documentElement.setAttribute('data-accent', a);
+        } catch (e) {}
+      })();
+    </script>
+    <link href="/_app/immutable/entry/start.9mt65Ltv.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/C2t1Mpfn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/vgqs9OYJ.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BSktsSYl.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/q48b9HqW.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.B08e8mU5.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.DgzC6j-V.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BSuGuYH_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CVO-F4Pu.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BWNMLYKH.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/B35gKHx8.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.Rgp14cVN.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.b7ZgPK0Q.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Bgykq5k7.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/BafEHjIZ.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/DEPy1Nsi.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/gF_0R78z.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CD8kYuFA.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cs7YRnQh.js" rel="modulepreload">
@@ -27,15 +49,15 @@
   <body><div>
 			<script>
 				{
-					__sveltekit_13c6ozj = {
+					__sveltekit_yra2nl = {
 						base: ""
 					};
 
 					const element = document.currentScript.parentElement;
 
 					Promise.all([
-						import("/_app/immutable/entry/start.yfj2fk2G.js"),
-						import("/_app/immutable/entry/app.B08e8mU5.js")
+						import("/_app/immutable/entry/start.9mt65Ltv.js"),
+						import("/_app/immutable/entry/app.DgzC6j-V.js")
 					]).then(([kit, app]) => {
 						kit.start(app, element);
 					});

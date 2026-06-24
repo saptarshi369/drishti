@@ -3,6 +3,8 @@ package api
 import (
 	"io/fs"
 	"net/http"
+	"path"
+	"strings"
 	"sync"
 
 	"github.com/saptarshi369/drishti/internal/config"
@@ -181,6 +183,47 @@ func (s *Server) Handler() http.Handler {
 	if err != nil {
 		panic(err) // compile-time embed guarantees this never fails at runtime
 	}
-	mux.Handle("/", http.FileServer(http.FS(sub)))
+	mux.Handle("/", spaFileServer(sub))
 	return mux
+}
+
+// spaFileServer serves the embedded single-page-app bundle with a client-route
+// fallback. SvelteKit (adapter-static, fallback:index.html) emits exactly one
+// HTML shell; every page is reached by client-side routing. A plain
+// http.FileServer therefore 404s on a hard navigation / refresh / bookmark of a
+// sub-route like /inventory, because no such file exists. This wrapper serves the
+// requested file when it exists (index.html, /_app assets, …) and otherwise
+// rewrites the request to "/" so the SPA shell is returned with 200 — letting the
+// browser hydrate and route to the intended page. Genuinely-missing files keep
+// 404ing only at the asset level: a navigation-looking path (no real file) gets
+// the shell, which is the standard SPA-server contract.
+func spaFileServer(sub fs.FS) http.Handler {
+	fileServer := http.FileServer(http.FS(sub))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Map the URL path to an FS path: strip the leading slash and clean it.
+		// path.Clean keeps things like "../" from escaping the embedded root.
+		name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
+		if name == "" {
+			name = "index.html" // "/" → the shell
+		}
+		// If a real, non-directory file backs this path, serve it untouched so
+		// assets keep their correct content-type.
+		if info, err := fs.Stat(sub, name); err == nil && !info.IsDir() {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+		// The path has no backing file. If it looks like a static asset (it has a
+		// file extension, e.g. /_app/…​.js), let FileServer return its normal 404 —
+		// masking a broken bundle reference with HTML would hide real errors.
+		if path.Ext(name) != "" {
+			fileServer.ServeHTTP(w, r) // 404 for the genuinely-missing asset
+			return
+		}
+		// Otherwise it's a client route (e.g. /inventory): return the SPA shell so
+		// the browser can hydrate and route. Rewrite a CLONE to "/" so FileServer
+		// emits index.html (200, text/html) without mutating the caller's request.
+		shell := r.Clone(r.Context())
+		shell.URL.Path = "/"
+		fileServer.ServeHTTP(w, shell)
+	})
 }

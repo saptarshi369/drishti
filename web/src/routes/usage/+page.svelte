@@ -69,7 +69,10 @@
     <!-- By project -->
     <div class="panel">
       <div class="panel-head">By project</div>
-      {#each usage.by_project as p (p.name)}
+      <!-- Key by index: this is a static list fetched once (no live reordering),
+           and two different project roots can share a display label, which would
+           collide on (p.name) and crash the render with each_key_duplicate. -->
+      {#each usage.by_project as p, i (i)}
         <div class="row">
           <span class="name mono">{p.name}</span>
           <span class="bar"><span style="width:{p.pct}%;background:var(--accent)"></span></span>
@@ -82,7 +85,10 @@
     <!-- By model -->
     <div class="panel">
       <div class="panel-head">By model</div>
-      {#each usage.by_model as m (m.name)}
+      <!-- Key by index: static list, rendered once. The backend now merges models
+           by label so names are unique, but index keys keep the render crash-proof
+           even if an unmapped id ever repeats a label. -->
+      {#each usage.by_model as m, i (i)}
         <div class="row">
           <span class="name">{m.name}</span>
           <span class="bar"><span style="width:{m.pct}%;background:var(--accent-dim)"></span></span>
