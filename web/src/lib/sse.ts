@@ -105,6 +105,11 @@ export const inventoryVersion = writable<number>(0);
 // SSE-driven Overview/Activity re-scope on their own via the server's broadcast.
 export const rootVersion = writable<number>(0);
 
+// activeRootLabel: a compact label for the current view root ("~" for the user-
+// global home, otherwise the folder name). The AppShell selector owns it; the
+// Overview shows it in its subtitle so the active scope is always visible.
+export const activeRootLabel = writable<string>('');
+
 export function connect() {
   const es = new EventSource('/api/stream');
   es.onopen = () => status.set('live');

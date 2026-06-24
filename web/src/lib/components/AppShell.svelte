@@ -24,8 +24,9 @@
   import { getActiveRoot, setActiveRoot, type ActiveRoot } from '$lib/api';
 
   // status store tells us whether the SSE daemon connection is live.
-  // rootVersion is bumped on a root switch so fetch-based pages re-fetch.
-  import { status, rootVersion } from '$lib/sse';
+  // rootVersion is bumped on a root switch so fetch-based pages re-fetch;
+  // activeRootLabel publishes the current scope label for the Overview subtitle.
+  import { status, rootVersion, activeRootLabel } from '$lib/sse';
 
   // children: the page slot in Svelte 5 runes style.
   let { children } = $props();
@@ -50,6 +51,7 @@
   async function loadRoots() {
     try {
       rootInfo = await getActiveRoot();
+      activeRootLabel.set(rootLabel(rootInfo.current));
     } catch {
       rootInfo = null; // selector silently hides its menu if roots can't be read
     }
@@ -63,6 +65,7 @@
     try {
       await setActiveRoot(root);
       rootInfo = { ...rootInfo, current: root };
+      activeRootLabel.set(rootLabel(root));
       rootVersion.update((v) => v + 1);
     } catch {
       /* leave current selection unchanged on failure */
