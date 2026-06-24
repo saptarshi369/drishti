@@ -32,6 +32,11 @@ type Server struct {
 	// resolved set already merges user + project scope. Empty means user-global.
 	// Guarded by mu.
 	defaultRoot string
+	// selectedRoot is the root the user picked in the top-bar selector (PUT
+	// /api/active-root). When non-empty it OVERRIDES defaultRoot app-wide so every
+	// screen (incl. the SSE-driven Overview) re-scopes to it. It is in-memory only:
+	// a daemon restart resets to the configured primary. Guarded by mu.
+	selectedRoot string
 	// contextWindowTokens is the denominator for the Context-Budget tax %; set
 	// from config by the daemon. 0 means "unset" → the handler treats pct as 0.
 	// Guarded by mu.
@@ -109,8 +114,30 @@ func (s *Server) snapshotConfig() config.Config {
 	return s.cfg
 }
 
-// currentDefaultRoot returns the current default root under a read lock.
+// SetSelectedRoot records the user's top-bar root choice. Empty clears it (back to
+// the daemon's primary root). Callers should pass a validated root (one of
+// rootOptions); validation lives in the PUT handler, not here.
+func (s *Server) SetSelectedRoot(root string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.selectedRoot = root
+}
+
+// currentDefaultRoot returns the active view root under a read lock: the user's
+// top-bar selection when set, otherwise the daemon's primary root. This single
+// accessor is what every screen scopes to, so a selection re-scopes them all.
 func (s *Server) currentDefaultRoot() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.selectedRoot != "" {
+		return s.selectedRoot
+	}
+	return s.defaultRoot
+}
+
+// currentPrimaryRoot returns the daemon's configured primary root (ignoring any
+// top-bar selection), so the selector UI can show which option is the default.
+func (s *Server) currentPrimaryRoot() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.defaultRoot
@@ -172,6 +199,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
 	mux.HandleFunc("GET /api/roots", s.handleListDirs)
 	mux.HandleFunc("PUT /api/roots", s.handleSetRoots)
+	mux.HandleFunc("GET /api/active-root", s.handleGetActiveRoot)
+	mux.HandleFunc("PUT /api/active-root", s.handleSetActiveRoot)
 	mux.HandleFunc("GET /api/thresholds", s.handleGetThresholds)
 	mux.HandleFunc("PUT /api/thresholds", s.handlePutThresholds)
 	mux.HandleFunc("PUT /api/rules", s.handlePutRules)

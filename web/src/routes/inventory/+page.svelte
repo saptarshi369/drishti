@@ -20,7 +20,7 @@
 <script lang="ts">
   import { getInventory } from '$lib/api';
   import type { ResolvedRow } from '$lib/api';
-  import { inventoryVersion } from '$lib/sse';
+  import { inventoryVersion, rootVersion } from '$lib/sse';
   import ScopeLadderRow from '$lib/components/ScopeLadderRow.svelte';
   import DetailDrawer from '$lib/components/DetailDrawer.svelte';
 
@@ -77,10 +77,10 @@
     fetchRows();
   });
 
-  // Re-fetch on SSE inventory_changed signal (version bump).
+  // Re-fetch on SSE inventory_changed signal OR a top-bar root switch (version bumps).
   $effect(() => {
-    const _v = $inventoryVersion; // subscribe; value unused directly
-    // Only trigger after mount (version starts at 0; skip the initial 0 value).
+    const _v = $inventoryVersion + $rootVersion; // subscribe to both
+    // Only trigger after mount (versions start at 0; skip the initial 0 value).
     if (_v > 0) fetchRows();
   });
 

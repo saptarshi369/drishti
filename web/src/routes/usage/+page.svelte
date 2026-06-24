@@ -11,7 +11,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { getUsage, getQuota, type UsageSnapshot } from '$lib/api';
-  import { quota } from '$lib/sse';
+  import { quota, rootVersion } from '$lib/sse';
   import { usd } from '$lib/format';
   import QuotaGauge from '$lib/components/QuotaGauge.svelte';
   import TrendChart from '$lib/components/TrendChart.svelte';
@@ -35,6 +35,12 @@
     load();
     // Seed the quota store before the first SSE frame (best-effort).
     getQuota().then((q) => quota.set(q)).catch(() => {});
+  });
+
+  // Re-fetch when the top-bar root selector switches the active root (bump > 0).
+  $effect(() => {
+    const _v = $rootVersion;
+    if (_v > 0) load();
   });
 
   // q: the live quota snapshot (store), or null.

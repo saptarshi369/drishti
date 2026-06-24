@@ -16,6 +16,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { getSecurity, type SecuritySnapshot } from '$lib/api';
+  import { rootVersion } from '$lib/sse';
 
   // snap: the API result, null until the mount fetch resolves.
   let snap = $state<SecuritySnapshot | null>(null);
@@ -33,6 +34,12 @@
   }
 
   onMount(() => { load(); });
+
+  // Re-fetch when the top-bar root selector switches the active root (bump > 0).
+  $effect(() => {
+    const _v = $rootVersion;
+    if (_v > 0) load();
+  });
 
   // colour: returns a CSS colour string for a given severity level.
   // Used for the left border on each finding card and the count chip borders.

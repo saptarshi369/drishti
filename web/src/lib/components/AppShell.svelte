@@ -19,13 +19,57 @@
 -->
 <script lang="ts">
   import { page } from '$app/stores';
+  import { onMount } from 'svelte';
   import { theme, accent, applyTheme, applyAccent } from '$lib/theme';
+  import { getActiveRoot, setActiveRoot, type ActiveRoot } from '$lib/api';
 
   // status store tells us whether the SSE daemon connection is live.
-  import { status } from '$lib/sse';
+  // rootVersion is bumped on a root switch so fetch-based pages re-fetch.
+  import { status, rootVersion } from '$lib/sse';
 
   // children: the page slot in Svelte 5 runes style.
   let { children } = $props();
+
+  // ---------- top-bar active-root selector ----------
+  // rootInfo: the selectable roots + current scope (GET /api/active-root); null
+  // until the first fetch resolves. rootOpen toggles the dropdown.
+  let rootInfo = $state<ActiveRoot | null>(null);
+  let rootOpen = $state(false);
+
+  // rootLabel: a compact display name for a root path — "~" for the home dir,
+  // otherwise the final path segment (the project folder name).
+  function rootLabel(p: string): string {
+    if (!p) return '~';
+    if (rootInfo && p === rootInfo.home) return '~';
+    const parts = p.replace(/\/+$/, '').split('/');
+    return parts[parts.length - 1] || '~';
+  }
+
+  // loadRoots fetches the selectable roots + current selection. Called on mount and
+  // whenever the dropdown opens, so roots added in Settings appear without a reload.
+  async function loadRoots() {
+    try {
+      rootInfo = await getActiveRoot();
+    } catch {
+      rootInfo = null; // selector silently hides its menu if roots can't be read
+    }
+  }
+
+  // chooseRoot switches the global view root. The server re-broadcasts so the
+  // Overview re-scopes live; bumping rootVersion makes fetch pages re-fetch too.
+  async function chooseRoot(root: string) {
+    rootOpen = false;
+    if (!rootInfo || root === rootInfo.current) return;
+    try {
+      await setActiveRoot(root);
+      rootInfo = { ...rootInfo, current: root };
+      rootVersion.update((v) => v + 1);
+    } catch {
+      /* leave current selection unchanged on failure */
+    }
+  }
+
+  onMount(loadRoots);
 
   // ---------- nav definition (from mockup navDef lines 696–700) ----------
   // Each entry: [href, icon, label, tag]
@@ -89,18 +133,45 @@
       <span style="font-weight:600;letter-spacing:-.01em;">Drishti</span>
     </div>
 
-    <!-- Root display — static placeholder until M2 adds a roots API.
-         Shown as disabled to make the future state obvious. -->
-    <button
-      disabled
-      aria-disabled="true"
-      title="Root selection — enabled in a later module"
-      style="display:flex;align-items:center;gap:7px;height:30px;padding:0 11px;border:1px solid var(--border);border-radius:7px;background:var(--panel);color:var(--text);font:inherit;font-size:12.5px;cursor:not-allowed;opacity:0.55;"
-    >
-      <span style="color:var(--text-faint);">⌂ Root</span>
-      <span style="font-family:'IBM Plex Mono',monospace;color:var(--text);">~</span>
-      <span style="color:var(--text-faint);font-size:9px;">▾</span>
-    </button>
+    <!-- Root selector — switches the global view root (scopes every screen). -->
+    <div style="position:relative;">
+      <button
+        onclick={() => { rootOpen = !rootOpen; if (rootOpen) loadRoots(); }}
+        title="Switch the active project root"
+        style="display:flex;align-items:center;gap:7px;height:30px;padding:0 11px;border:1px solid var(--border);border-radius:7px;background:var(--panel);color:var(--text);font:inherit;font-size:12.5px;cursor:pointer;"
+      >
+        <span style="color:var(--text-faint);">⌂ Root</span>
+        <span style="font-family:'IBM Plex Mono',monospace;color:var(--text);">{rootLabel(rootInfo?.current ?? '')}</span>
+        <span style="color:var(--text-faint);font-size:9px;">▾</span>
+      </button>
+
+      {#if rootOpen && rootInfo}
+        <!-- Click-catcher: closes the menu when clicking elsewhere. -->
+        <button
+          aria-label="Close root menu"
+          onclick={() => (rootOpen = false)}
+          style="position:fixed;inset:0;z-index:40;background:transparent;border:none;cursor:default;"
+        ></button>
+        <div
+          style="position:absolute;top:34px;left:0;z-index:41;min-width:220px;max-height:320px;overflow-y:auto;background:var(--panel);border:1px solid var(--border);border-radius:9px;box-shadow:var(--shadow);padding:5px;animation:hud-in .12s ease;"
+        >
+          {#each rootInfo.roots as r (r)}
+            {@const isCurrent = r === rootInfo.current}
+            <button
+              onclick={() => chooseRoot(r)}
+              title={r}
+              style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:7px 9px;border:none;border-radius:6px;background:{isCurrent ? 'var(--accent-soft)' : 'transparent'};color:var(--text);font:inherit;font-size:12.5px;cursor:pointer;"
+            >
+              <span style="width:14px;color:var(--accent);">{isCurrent ? '✓' : ''}</span>
+              <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                {rootLabel(r)}
+                {#if r === rootInfo.home}<span style="color:var(--text-faint);"> · user global</span>{/if}
+              </span>
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
 
     <!-- Agent switcher — DISABLED until M2.
          Rendered with reduced opacity + aria-disabled so it is visually

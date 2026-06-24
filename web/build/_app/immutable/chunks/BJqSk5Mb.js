@@ -1,0 +1,1 @@
+import{ao as c,a5 as o,ag as u,u as t}from"./B-MoM-Cy.js";function a(e){throw new Error("https://svelte.dev/e/lifecycle_outside_component")}function l(e){o===null&&a(),u&&o.l!==null?i(o).m.push(e):c(()=>{const n=t(e);if(typeof n=="function")return n})}function f(e){o===null&&a(),l(()=>()=>t(e))}function i(e){var n=e.l;return n.u??(n.u={a:[],b:[],m:[]})}export{f as a,l as o};

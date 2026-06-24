@@ -16,6 +16,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { getContextBudget, type ContextBudgetSnapshot } from '$lib/api';
+  import { rootVersion } from '$lib/sse';
   import { tokensCompact, pct } from '$lib/format';
 
   // snapshot: the API result, null until the mount fetch resolves.
@@ -39,6 +40,12 @@
   }
 
   onMount(() => { load(); });
+
+  // Re-fetch when the top-bar root selector switches the active root (bump > 0).
+  $effect(() => {
+    const _v = $rootVersion;
+    if (_v > 0) load();
+  });
 
   // projectedTokens: total_tokens minus the sum of tokens for disabled rows.
   // Updates reactively whenever disabledIds or snapshot changes.

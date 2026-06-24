@@ -12,6 +12,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { getSkills, type SkillsSnapshot, type SkillItem } from '$lib/api';
+  import { rootVersion } from '$lib/sse';
 
   let snap = $state<SkillsSnapshot | null>(null);
   let err = $state<string | null>(null);
@@ -29,6 +30,12 @@
   }
 
   onMount(() => { load(); });
+
+  // Re-fetch when the top-bar root selector switches the active root (bump > 0).
+  $effect(() => {
+    const _v = $rootVersion;
+    if (_v > 0) load();
+  });
 
   // rows: a sorted copy of snap.items (we never mutate the original). Numeric
   // columns sort descending (biggest first); name sorts ascending.
