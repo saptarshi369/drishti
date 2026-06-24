@@ -50,17 +50,17 @@
 
   <!-- KPI ROW -->
   <div class="kpis">
-    <a class="card kpi" href="/inventory">
+    <div class="card kpi compcard">
       <div class="label">Active components</div>
       {#if comps}
-        <div class="big">{int(headline?.count ?? 0)} <span class="unit">{headline?.category ?? ''}</span></div>
+        <a class="big complink" href="/inventory?cat={headline?.category}">{int(headline?.count ?? 0)} <span class="unit">{headline?.category ?? ''}</span></a>
         {#if breakdown.length > 0}
-        <div class="meta">
-          {#each breakdown as c}<span>{c.count} {c.category}</span>{/each}
+        <div class="chips">
+          {#each breakdown as c}<a class="chip" href="/inventory?cat={c.category}">{c.count}&nbsp;{c.category}</a>{/each}
         </div>
         {/if}
       {:else}<div class="big gated">—</div>{/if}
-    </a>
+    </div>
 
     <a class="card kpi" href="/activity">
       <div class="label">Prompts today</div>
@@ -178,7 +178,16 @@
   .big { font-size: 27px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
   .big .unit { font-size: 12px; color: var(--text-dim); font-weight: 400; }
   .gated { color: var(--text-faint); }
-  .meta { margin-top: 8px; display: flex; gap: 12px; font-size: 12px; color: var(--text-dim); }
+  .meta { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; color: var(--text-dim); }
+  .meta span { white-space: nowrap; }
+  /* Active-components card: the card is no longer one link, so disable the card
+     lift; each category is its own chip linking to that inventory tab. */
+  .compcard:hover { transform: none; border-color: var(--border); }
+  .complink { display: inline-flex; align-items: baseline; gap: 7px; text-decoration: none; color: var(--text); transition: .12s; }
+  .complink:hover { color: var(--accent); }
+  .chips { margin-top: 9px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font-size: 11.5px; color: var(--text-dim); background: var(--panel-2); border: 1px solid var(--border-soft); border-radius: 6px; padding: 2px 8px; text-decoration: none; white-space: nowrap; transition: .12s; }
+  .chip:hover { color: var(--accent); border-color: var(--accent); }
   .qrow { display: flex; align-items: center; gap: 9px; margin-bottom: 6px; }
   .qlbl { font-size: 11px; color: var(--text-faint); width: 46px; }
   .qval { font-size: 12px; font-weight: 600; width: 34px; text-align: right; font-variant-numeric: tabular-nums; }

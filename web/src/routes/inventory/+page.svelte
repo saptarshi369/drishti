@@ -18,6 +18,8 @@
   Never opens a second EventSource — the layout's connect() owns the stream.
 -->
 <script lang="ts">
+  import { get } from 'svelte/store';
+  import { page } from '$app/stores';
   import { getInventory } from '$lib/api';
   import type { ResolvedRow } from '$lib/api';
   import { inventoryVersion, rootVersion } from '$lib/sse';
@@ -42,7 +44,13 @@
   ];
 
   // ——— Reactive state ———
-  let activeCategory = $state<string>('skill');
+  // Initial tab honours a ?cat= deep-link (e.g. the Overview "Active components"
+  // card links each category to /inventory?cat=hook). get(page) reads the URL once
+  // at mount; an unknown/absent value falls back to the Skills tab.
+  const catParam = get(page).url.searchParams.get('cat');
+  let activeCategory = $state<string>(
+    TABS.some((t) => t.id === catParam) ? (catParam as string) : 'skill'
+  );
   let showDisabled   = $state(false);
   let filterText     = $state('');
 
