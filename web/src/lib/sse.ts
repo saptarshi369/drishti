@@ -99,6 +99,17 @@ export const overview = writable<Overview | null>(null);
 // changes still triggers a fetch even if Svelte batches two updates together.
 export const inventoryVersion = writable<number>(0);
 
+// rootVersion: bumps by 1 each time the user switches the active view root in the
+// top-bar selector. Fetch-based pages (usage/context/security/skills/inventory)
+// subscribe and re-fetch so they re-scope to the new root immediately. The
+// SSE-driven Overview/Activity re-scope on their own via the server's broadcast.
+export const rootVersion = writable<number>(0);
+
+// activeRootLabel: a compact label for the current view root ("~" for the user-
+// global home, otherwise the folder name). The AppShell selector owns it; the
+// Overview shows it in its subtitle so the active scope is always visible.
+export const activeRootLabel = writable<string>('');
+
 export function connect() {
   const es = new EventSource('/api/stream');
   es.onopen = () => status.set('live');

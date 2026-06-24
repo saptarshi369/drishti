@@ -29,10 +29,27 @@ func (r *Reconciler) Watch(ctx context.Context, onChange func(int)) {
 	var timer *time.Timer
 	timerC := make(<-chan time.Time)
 
+	// Safety poll. fsnotify is NOT recursive: watching the top-level root (e.g.
+	// ~/.claude/projects) does NOT report writes to transcripts inside per-project
+	// SUBDIRECTORIES — which is the normal case (an active session appends to
+	// ~/.claude/projects/<encoded-project>/<session>.jsonl). Without this, live
+	// activity silently stops updating after startup until the daemon restarts.
+	// A periodic re-scan catches nested writes; scanAllCount is stat-cheap and only
+	// re-reads files whose size/mtime/identity actually changed, so idle polling is
+	// light. fsnotify still provides low-latency reaction to top-level changes.
+	const safetyPoll = 2 * time.Second
+	poll := time.NewTicker(safetyPoll)
+	defer poll.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-poll.C:
+			n := r.scanAllCount()
+			if onChange != nil {
+				onChange(n)
+			}
 		case ev, ok := <-w.Events:
 			if !ok {
 				return

@@ -18,9 +18,11 @@
   Never opens a second EventSource — the layout's connect() owns the stream.
 -->
 <script lang="ts">
+  import { get } from 'svelte/store';
+  import { page } from '$app/stores';
   import { getInventory } from '$lib/api';
   import type { ResolvedRow } from '$lib/api';
-  import { inventoryVersion } from '$lib/sse';
+  import { inventoryVersion, rootVersion } from '$lib/sse';
   import ScopeLadderRow from '$lib/components/ScopeLadderRow.svelte';
   import DetailDrawer from '$lib/components/DetailDrawer.svelte';
 
@@ -42,7 +44,13 @@
   ];
 
   // ——— Reactive state ———
-  let activeCategory = $state<string>('skill');
+  // Initial tab honours a ?cat= deep-link (e.g. the Overview "Active components"
+  // card links each category to /inventory?cat=hook). get(page) reads the URL once
+  // at mount; an unknown/absent value falls back to the Skills tab.
+  const catParam = get(page).url.searchParams.get('cat');
+  let activeCategory = $state<string>(
+    TABS.some((t) => t.id === catParam) ? (catParam as string) : 'skill'
+  );
   let showDisabled   = $state(false);
   let filterText     = $state('');
 
@@ -77,10 +85,10 @@
     fetchRows();
   });
 
-  // Re-fetch on SSE inventory_changed signal (version bump).
+  // Re-fetch on SSE inventory_changed signal OR a top-bar root switch (version bumps).
   $effect(() => {
-    const _v = $inventoryVersion; // subscribe; value unused directly
-    // Only trigger after mount (version starts at 0; skip the initial 0 value).
+    const _v = $inventoryVersion + $rootVersion; // subscribe to both
+    // Only trigger after mount (versions start at 0; skip the initial 0 value).
     if (_v > 0) fetchRows();
   });
 

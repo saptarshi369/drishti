@@ -32,16 +32,18 @@ import (
 // The GROUP BY et.code query returns one row per event-type code that has at
 // least one matching event; a switch maps each code to the right CounterSet
 // field. Unknown codes are silently ignored (YAGNI / future-proofing).
-func (s *Store) ActivityCounters(sinceMs int64, sessionID string) (model.CounterSet, error) {
+// projectKey scopes the tally to one encoded project dir; "" means no filter (All).
+func (s *Store) ActivityCounters(sinceMs int64, sessionID, projectKey string) (model.CounterSet, error) {
 	var c model.CounterSet
 	// Join events → event_types so we get the human-readable code, not an int id.
 	// The double-bind of sessionID (once for the '' test, once for equality) is
 	// how database/sql works: each '?' consumes exactly one argument in order.
+	// The same double-bind scopes by project_root when projectKey is non-empty.
 	rows, err := s.db.Query(`
 		SELECT et.code, COUNT(*)
 		FROM events e JOIN event_types et ON et.id = e.type_id
-		WHERE e.ts_ms >= ? AND (? = '' OR e.session_id = ?)
-		GROUP BY et.code`, sinceMs, sessionID, sessionID)
+		WHERE e.ts_ms >= ? AND (? = '' OR e.session_id = ?) AND (? = '' OR e.project_root = ?)
+		GROUP BY et.code`, sinceMs, sessionID, sessionID, projectKey, projectKey)
 	if err != nil {
 		return c, err
 	}
@@ -213,7 +215,9 @@ func (s *Store) SkillAnalytics(projectRoot string) ([]model.SkillStatRow, error)
 //	    idx = int(m - startMin)     // 0 = oldest, buckets-1 = newest
 //	We range-check idx before writing so rows that fall outside [0, buckets)
 //	are silently discarded (future-proofing against skewed clocks).
-func (s *Store) EventRatePerMinute(typeCode string, nowMs int64, buckets int) ([]int, error) {
+//
+// projectKey scopes the rate to one encoded project dir; "" means no filter (All).
+func (s *Store) EventRatePerMinute(typeCode string, nowMs int64, buckets int, projectKey string) ([]int, error) {
 	// Always return a slice of the requested length, even if buckets <= 0
 	// (edge-case guard: callers can safely range over an empty slice).
 	out := make([]int, buckets)
@@ -231,8 +235,8 @@ func (s *Store) EventRatePerMinute(typeCode string, nowMs int64, buckets int) ([
 	rows, err := s.db.Query(`
 		SELECT e.ts_ms / 60000 AS m, COUNT(*)
 		FROM events e JOIN event_types et ON et.id = e.type_id
-		WHERE et.code = ? AND e.ts_ms >= ?
-		GROUP BY m`, typeCode, startMin*minute)
+		WHERE et.code = ? AND e.ts_ms >= ? AND (? = '' OR e.project_root = ?)
+		GROUP BY m`, typeCode, startMin*minute, projectKey, projectKey)
 	if err != nil {
 		return nil, err
 	}
@@ -273,7 +277,8 @@ func (s *Store) EventRatePerMinute(typeCode string, nowMs int64, buckets int) ([
 //
 // Limit clamp: callers may omit the limit (0) or send an unreasonably large
 // value; we normalise both to the safe default of 50 rows per page.
-func (s *Store) EventsPage(typeCode string, limit int, beforeID int64) ([]model.RecentEvent, error) {
+// projectKey scopes the page to one encoded project dir; "" means no filter (All).
+func (s *Store) EventsPage(typeCode string, limit int, beforeID int64, projectKey string) ([]model.RecentEvent, error) {
 	// Clamp limit: <=0 (unset) or >200 (excessive) both default to 50 rows.
 	if limit <= 0 || limit > 200 {
 		limit = 50
@@ -286,8 +291,8 @@ func (s *Store) EventsPage(typeCode string, limit int, beforeID int64) ([]model.
 		SELECT e.id, e.ts_ms, et.code, COALESCE(e.session_id,''),
 		       COALESCE(e.tool_name,''), COALESCE(e.skill_name,''), COALESCE(e.status,'')
 		FROM events e JOIN event_types et ON et.id = e.type_id
-		WHERE (? = '' OR et.code = ?) AND (? = 0 OR e.id < ?)
-		ORDER BY e.id DESC LIMIT ?`, typeCode, typeCode, beforeID, beforeID, limit)
+		WHERE (? = '' OR et.code = ?) AND (? = 0 OR e.id < ?) AND (? = '' OR e.project_root = ?)
+		ORDER BY e.id DESC LIMIT ?`, typeCode, typeCode, beforeID, beforeID, projectKey, projectKey, limit)
 	if err != nil {
 		return nil, err
 	}

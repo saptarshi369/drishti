@@ -9,6 +9,18 @@ import (
 	"github.com/saptarshi369/drishti/internal/store"
 )
 
+// TestEncodeProjectKey verifies the path→key mapping used to scope usage/events
+// to a folder: every "/" becomes "-" (matching Claude's transcript dir naming),
+// and the empty "All" scope encodes to "" (no filter).
+func TestEncodeProjectKey(t *testing.T) {
+	if got := EncodeProjectKey("/Users/me/workspace/drishti"); got != "-Users-me-workspace-drishti" {
+		t.Errorf("EncodeProjectKey = %q, want -Users-me-workspace-drishti", got)
+	}
+	if got := EncodeProjectKey(""); got != "" {
+		t.Errorf("EncodeProjectKey(\"\") = %q, want \"\" (All)", got)
+	}
+}
+
 func today() int {
 	n := time.Now()
 	return n.Year()*10000 + int(n.Month())*100 + n.Day()

@@ -320,6 +320,18 @@ export const listDirs = (path: string) =>
 export const setRoots = (paths: string[]) =>
   send<{ saved: boolean }>('/api/roots', 'PUT', { paths });
 
+/** ActiveRoot is the top-bar selector's view: the current scope ("" = All), the
+ *  daemon's primary folder (info), and every configured folder. The "All" option
+ *  is the empty string and is added client-side. */
+export type ActiveRoot = { current: string; default: string; roots: string[] };
+
+/** getActiveRoot fetches the selectable roots + current selection (GET /api/active-root). */
+export const getActiveRoot = () => get<ActiveRoot>('/api/active-root');
+
+/** setActiveRoot switches the global view root (PUT /api/active-root). */
+export const setActiveRoot = (root: string) =>
+  send<{ current: string }>('/api/active-root', 'PUT', { root });
+
 /**
  * checkUpdate checks for a new Drishti version (GET /api/update/status?check=1).
  * check=1 forces a live fetch rather than returning a cached result.

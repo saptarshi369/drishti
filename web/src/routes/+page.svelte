@@ -1,7 +1,8 @@
 <!-- Overview (Command Center): KPI row + live activity + health + active-here + alerts. -->
 <script lang="ts">
-  import { overview, quota, activity } from '$lib/sse';
-  import { usd, int, ago, pct, tokensCompact } from '$lib/format';
+  import { onMount } from 'svelte';
+  import { overview, quota, activity, activeRootLabel } from '$lib/sse';
+  import { usd, int, ago, pct, tokensCompact, clock } from '$lib/format';
   import Sparkline from '$lib/components/Sparkline.svelte';
   import LiveEventRow from '$lib/components/LiveEventRow.svelte';
 
@@ -26,38 +27,51 @@
   $: headline = comps?.by_category?.[0];
   $: breakdown = comps?.by_category?.slice(1) ?? [];
   $: q = $quota;
+  $: k = $overview?.kpis;
+  // last_24h activity counters feed the Prompts card's "skills · tools" sub-line.
+  $: act = $activity?.counters?.last_24h;
+
+  // Ticking clock for the "Updated …" header stamp (matches the design mockup).
+  let nowMs = Date.now();
+  onMount(() => {
+    const t = setInterval(() => (nowMs = Date.now()), 1000);
+    return () => clearInterval(t);
+  });
 </script>
 
 <section class="page">
   <header class="head">
     <div>
       <h1>Command Center</h1>
-      <p class="sub">Everything active, live, and what it costs.</p>
+      <p class="sub">Everything active, live, and what it costs — for <span class="root">{$activeRootLabel || 'All'}</span></p>
     </div>
+    <div class="updated">Updated <span>{clock(nowMs)}</span></div>
   </header>
 
   <!-- KPI ROW -->
   <div class="kpis">
-    <a class="card kpi" href="/inventory">
+    <div class="card kpi compcard">
       <div class="label">Active components</div>
       {#if comps}
-        <div class="big">{int(headline?.count ?? 0)} <span class="unit">{headline?.category ?? ''}</span></div>
+        <a class="big complink" href="/inventory?cat={headline?.category}">{int(headline?.count ?? 0)} <span class="unit">{headline?.category ?? ''}</span></a>
         {#if breakdown.length > 0}
-        <div class="meta">
-          {#each breakdown as c}<span>{c.count} {c.category}</span>{/each}
+        <div class="chips">
+          {#each breakdown as c}<a class="chip" href="/inventory?cat={c.category}">{c.count}&nbsp;{c.category}</a>{/each}
         </div>
         {/if}
       {:else}<div class="big gated">—</div>{/if}
-    </a>
+    </div>
 
     <a class="card kpi" href="/activity">
       <div class="label">Prompts today</div>
       <div class="big">{$overview ? int($overview.kpis.prompts_today) : '—'}</div>
+      {#if act}<div class="meta"><span>{int(act.skills)} skills</span><span>{int(act.tools)} tool calls</span></div>{/if}
     </a>
 
     <a class="card kpi" href="/usage">
       <div class="label">Spend today <span class="est">est.</span></div>
       <div class="big">{$overview ? usd($overview.kpis.spend_today_usd) : '—'}</div>
+      {#if k}<div class="meta"><span>{tokensCompact(k.input_tokens)} in</span><span>{tokensCompact(k.output_tokens)} out</span><span>{tokensCompact(k.cache_tokens)} cache</span></div>{/if}
     </a>
 
     <a class="card kpi" href="/usage">
@@ -81,9 +95,10 @@
       {#if $activity}
         <div class="spark"><Sparkline data={$activity.sparklines.prompts_per_min} width={300} height={46} /></div>
         <div class="events">
-          {#each $activity.recent.slice(0, 6) as e (e.id)}
+          {#each ($activity.recent ?? []).slice(0, 8) as e (e.id)}
             <LiveEventRow ev={e} />
           {/each}
+          {#if ($activity.recent ?? []).length === 0}<div class="empty">No activity in this scope yet.</div>{/if}
         </div>
       {:else}<div class="empty">No activity yet — fire a prompt in Claude Code.</div>{/if}
     </div>
@@ -148,8 +163,12 @@
 
 <style>
   .page { display: flex; flex-direction: column; gap: 14px; }
+  .head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
   .head h1 { margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -.02em; }
   .sub { margin: 4px 0 0; font-size: 13px; color: var(--text-faint); }
+  .sub .root { font-family: 'IBM Plex Mono', monospace; color: var(--text-dim); }
+  .updated { flex: none; font-size: 12px; color: var(--text-faint); }
+  .updated span { color: var(--text-dim); font-variant-numeric: tabular-nums; }
   .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
   .card { border: 1px solid var(--border); border-radius: 11px; background: var(--panel); overflow: hidden; }
   .card.pad, .kpi { padding: 15px 16px; }
@@ -160,13 +179,22 @@
   .big { font-size: 27px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
   .big .unit { font-size: 12px; color: var(--text-dim); font-weight: 400; }
   .gated { color: var(--text-faint); }
-  .meta { margin-top: 8px; display: flex; gap: 12px; font-size: 12px; color: var(--text-dim); }
+  .meta { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; color: var(--text-dim); }
+  .meta span { white-space: nowrap; }
+  /* Active-components card: the card is no longer one link, so disable the card
+     lift; each category is its own chip linking to that inventory tab. */
+  .compcard:hover { transform: none; border-color: var(--border); }
+  .complink { display: inline-flex; align-items: baseline; gap: 7px; text-decoration: none; color: var(--text); transition: .12s; }
+  .complink:hover { color: var(--accent); }
+  .chips { margin-top: 9px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font-size: 11.5px; color: var(--text-dim); background: var(--panel-2); border: 1px solid var(--border-soft); border-radius: 6px; padding: 2px 8px; text-decoration: none; white-space: nowrap; transition: .12s; }
+  .chip:hover { color: var(--accent); border-color: var(--accent); }
   .qrow { display: flex; align-items: center; gap: 9px; margin-bottom: 6px; }
   .qlbl { font-size: 11px; color: var(--text-faint); width: 46px; }
   .qval { font-size: 12px; font-weight: 600; width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
   .bar { flex: 1; height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; }
   .fill { display: block; height: 100%; border-radius: 3px; }
-  .body { display: grid; grid-template-columns: 1.35fr 1fr; gap: 14px; }
+  .body { display: grid; grid-template-columns: 1.35fr 1fr; gap: 14px; align-items: start; }
   .rightcol { display: flex; flex-direction: column; gap: 14px; }
   .cardhead { display: flex; align-items: center; justify-content: space-between; padding: 13px 16px; border-bottom: 1px solid var(--border-soft); font-size: 13px; font-weight: 600; }
   .faint { color: var(--text-faint); font-weight: 400; }

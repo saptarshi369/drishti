@@ -24,7 +24,8 @@ import (
 // code, but encoding/json marshals a nil slice as null and an empty slice as
 // []. We always want [], so we replace nil with an initialised empty slice.
 func (s *Server) handleActivity(w http.ResponseWriter, _ *http.Request) {
-	snap, err := services.ActivitySnapshot(s.st, s.currentDefaultRoot())
+	root := s.currentDefaultRoot()
+	snap, err := services.ActivitySnapshot(s.st, root, services.EncodeProjectKey(root))
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, "activity_failed", "could not assemble activity", true)
 		return
@@ -61,7 +62,7 @@ func (s *Server) handleActivityEvents(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	// ParseInt with bitSize=64 to safely hold a SQLite int64 row id.
 	before, _ := strconv.ParseInt(q.Get("before"), 10, 64)
-	evs, err := s.st.EventsPage(q.Get("type"), limit, before)
+	evs, err := s.st.EventsPage(q.Get("type"), limit, before, services.EncodeProjectKey(s.currentDefaultRoot()))
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, "events_failed", "could not read events", true)
 		return

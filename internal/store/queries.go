@@ -148,10 +148,11 @@ func (s *Store) ApplyIngest(b IngestBatch) (int, error) {
 		// nullIfEmpty stores "" as SQL NULL (keeps partial indexes lean).
 		res, err := tx.Exec(`
 			INSERT INTO events (agent_id, type_id, source_id, session_id, ts_ms,
-			    tool_name, skill_name, status, dedupe_key)
-			VALUES (?,?,1,?,?,?,?,?,?) ON CONFLICT(dedupe_key) DO NOTHING`,
+			    tool_name, skill_name, status, dedupe_key, project_root)
+			VALUES (?,?,1,?,?,?,?,?,?,?) ON CONFLICT(dedupe_key) DO NOTHING`,
 			agentID(e.AgentCode), eventTypeID(e.TypeCode), e.SessionID, e.TsMs,
-			nullIfEmpty(e.ToolName), nullIfEmpty(e.SkillName), nullIfEmpty(e.Status), e.DedupeKey)
+			nullIfEmpty(e.ToolName), nullIfEmpty(e.SkillName), nullIfEmpty(e.Status), e.DedupeKey,
+			b.ProjectRoot)
 		if err != nil {
 			return 0, fmt.Errorf("insert event: %w", err)
 		}
@@ -251,12 +252,14 @@ func (s *Store) ApplyIngest(b IngestBatch) (int, error) {
 // interface — a common Go/SQLite idiom to avoid sql.NullString boilerplate.
 // The omitempty JSON tags on RecentEvent mean empty fields are stripped from
 // the API response, keeping prompt-row payloads compact.
-func (s *Store) RecentEvents(limit int) ([]model.RecentEvent, error) {
+// projectKey scopes the read to one encoded project dir; "" means no filter (All).
+func (s *Store) RecentEvents(limit int, projectKey string) ([]model.RecentEvent, error) {
 	rows, err := s.db.Query(`
 		SELECT e.id, e.ts_ms, et.code, COALESCE(e.session_id,''),
 		       COALESCE(e.tool_name,''), COALESCE(e.skill_name,''), COALESCE(e.status,'')
 		FROM events e JOIN event_types et ON et.id = e.type_id
-		ORDER BY e.id DESC LIMIT ?`, limit)
+		WHERE (? = '' OR e.project_root = ?)
+		ORDER BY e.id DESC LIMIT ?`, projectKey, projectKey, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -319,12 +322,20 @@ func (s *Store) BackfillRollupCost(costFn func(model string, in, out, cacheRead,
 	return nil
 }
 
-// OverviewKPIs reads today's headline numbers from v_overview_kpis (claude row).
-func (s *Store) OverviewKPIs() (model.OverviewKPIs, error) {
+// OverviewKPIs reads today's headline numbers (claude). It sums today's
+// usage_rollup directly (the same shape as the v_overview_kpis view) so it can
+// scope to one project: projectKey "" sums every project (= the global view);
+// a non-empty key (the encoded project dir) returns that folder's numbers only.
+func (s *Store) OverviewKPIs(projectKey string) (model.OverviewKPIs, error) {
 	var k model.OverviewKPIs
 	err := s.db.QueryRow(`
-		SELECT prompts_today, spend_today_usd, input_tokens, output_tokens, cache_tokens
-		FROM v_overview_kpis WHERE agent='claude'`).
+		SELECT COALESCE(SUM(u.prompt_count),0),  COALESCE(SUM(u.est_cost_usd),0),
+		       COALESCE(SUM(u.input_tokens),0),   COALESCE(SUM(u.output_tokens),0),
+		       COALESCE(SUM(u.cache_tokens),0)
+		FROM usage_rollup u JOIN agents a ON a.id = u.agent_id
+		WHERE a.code='claude'
+		  AND u.day = CAST(strftime('%Y%m%d','now','localtime') AS INTEGER)
+		  AND (? = '' OR u.project_root = ?)`, projectKey, projectKey).
 		Scan(&k.PromptsToday, &k.SpendTodayUSD, &k.InputTokens, &k.OutputTokens, &k.CacheTokens)
 	return k, err
 }

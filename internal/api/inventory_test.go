@@ -124,7 +124,7 @@ func TestInventoryDefaultRoot(t *testing.T) {
 	}})
 
 	srv := NewServer("test", st)
-	srv.SetDefaultRoot("/proj")
+	srv.SetSelectedRoot("/proj") // the active view scope; "" (All) is the default
 	req := httptest.NewRequest(http.MethodGet, "/api/inventory?category=memory", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)

@@ -140,7 +140,8 @@ func (s *Server) snapshotMessages() []Message {
 
 	// Append activity snapshot if available. Failure is non-fatal: the activity
 	// frame is omitted but counters+status are still delivered (§14 failsafe).
-	if act, err := services.ActivitySnapshot(s.st, s.currentDefaultRoot()); err == nil {
+	actRoot := s.currentDefaultRoot()
+	if act, err := services.ActivitySnapshot(s.st, actRoot, services.EncodeProjectKey(actRoot)); err == nil {
 		msgs = append(msgs, Message{Type: "activity", TS: now, Payload: act})
 	}
 

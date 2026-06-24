@@ -49,8 +49,10 @@ func (s *Server) handleOverview(w http.ResponseWriter, _ *http.Request) {
 // overviewParams snapshots the mutex-guarded server settings the Overview
 // assembler needs, via the M7 accessors (never the raw fields — data-race guard).
 func (s *Server) overviewParams() services.OverviewParams {
+	root := s.currentDefaultRoot()
 	return services.OverviewParams{
-		Root:            s.currentDefaultRoot(),
+		Root:            root,
+		ProjectKey:      services.EncodeProjectKey(root),
 		WindowTokens:    s.currentContextWindowTokens(),
 		SkillThresholds: s.currentSkillThresholds(),
 	}

@@ -46,7 +46,7 @@ func TestActivityCountersByWindowAndSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 24h-style window: since=100 → excludes the ts=50 error.
-	all, err := st.ActivityCounters(100, "")
+	all, err := st.ActivityCounters(100, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestActivityCountersByWindowAndSession(t *testing.T) {
 		t.Fatalf("window counts wrong: %+v", all)
 	}
 	// Session s1 since=0.
-	sess, _ := st.ActivityCounters(0, "s1")
+	sess, _ := st.ActivityCounters(0, "s1", "")
 	if sess.Errors != 0 || sess.Blocked != 1 || sess.Prompts != 1 {
 		t.Fatalf("session counts wrong: %+v", sess)
 	}
@@ -178,7 +178,7 @@ func TestEventRatePerMinute(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := st.EventRatePerMinute("prompt", now, 3)
+	got, err := st.EventRatePerMinute("prompt", now, 3, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestRecentEventsRichFields(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := st.RecentEvents(10)
+	got, err := st.RecentEvents(10, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +238,7 @@ func TestEventsPagePaginatesByID(t *testing.T) {
 	if _, err := st.ApplyIngest(IngestBatch{Events: evs}); err != nil {
 		t.Fatal(err)
 	}
-	first, err := st.EventsPage("", 2, 0)
+	first, err := st.EventsPage("", 2, 0, "")
 	if err != nil || len(first) != 2 {
 		t.Fatalf("first page len=%d err=%v", len(first), err)
 	}
@@ -246,7 +246,7 @@ func TestEventsPagePaginatesByID(t *testing.T) {
 		t.Fatalf("not newest-first: got TsMs %d, %d; want 1004, 1003", first[0].TsMs, first[1].TsMs)
 	}
 	// All same type filter returns only tool_use; filter mismatch returns none.
-	none, err := st.EventsPage("prompt", 10, 0)
+	none, err := st.EventsPage("prompt", 10, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
