@@ -1,9 +1,9 @@
 # Drishti — a local observability dashboard for Claude Code
 
-**Drishti** (Sanskrit for *sight / vision*) is a fast, private, local dashboard that shows you
+**Drishti** is a private, local dashboard that shows you
 exactly what your [Claude Code](https://claude.com/claude-code) setup is doing: every skill, MCP
-server, hook, and agent that's active, what you're spending, how much of your context window is
-taxed before you type a word, and where your configuration might be unsafe.
+server, hook, and agent that's active, what you're spending (estimated, not actual), how much of your context window is
+taxed before you type a word of prompt, and where your configuration might be unsafe.
 
 It runs entirely on your machine, reads your Claude Code config **read-only**, and sends **no
 telemetry**.
